@@ -8,7 +8,8 @@ import TextierCore
 /// Pattern or not, where one row at a time is open on its parsed view. The text
 /// can be edited, typed or pasted into in the preview, and is inspected again
 /// after a pause, as the Panel's Input is. It never reads the clipboard: the menu
-/// bar icon shows the last text again.
+/// bar icon shows the last text again, until it's cleared (by hand, or a while
+/// after the popover closes when the config's `clearSelectionAfter` says so).
 @MainActor
 @Observable
 final class SelectionPopoverModel {
@@ -37,6 +38,8 @@ final class SelectionPopoverModel {
     @ObservationIgnored private var heldText = ""
     /// The inspection after a pause in editing the preview.
     @ObservationIgnored private var reinspection: Timer?
+    /// Clears the text a while after the popover closed (`didClose`).
+    @ObservationIgnored private var clearing: Timer?
     @ObservationIgnored private var edits: NotificationObservation?
 
     /// A Match in the list: its entry and the tab it's in.
@@ -150,6 +153,7 @@ final class SelectionPopoverModel {
     /// Shows what the shortcut captured: the selection, or nil when there was none
     /// (nothing selected, or no Accessibility to copy it).
     func show(selection: String?, lacksAccessibility: Bool = false) {
+        clearing?.invalidate()
         let string = selection ?? ""
         hasCaptured = true
         self.lacksAccessibility = lacksAccessibility
@@ -174,11 +178,51 @@ final class SelectionPopoverModel {
     /// The popover opening: the list takes the keyboard, or with no text yet, the
     /// preview, ready for a paste.
     func didOpen() {
+        clearing?.invalidate()
         if text.isEmpty, !isTooLarge {
             preview.window?.makeFirstResponder(preview)
         } else {
             focusRequests += 1
         }
+    }
+
+    /// The popover closing: with `seconds` above 0 (the config's
+    /// `clearSelectionAfter`), the text clears that long after, unless the popover
+    /// opens again first.
+    func didClose(clearingAfter seconds: TimeInterval) {
+        clearing?.invalidate()
+        guard seconds > 0, canClear else { return }
+        let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.clear() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        clearing = timer
+    }
+
+    /// There's something to clear: text, or what the last capture found.
+    var canClear: Bool {
+        !text.isEmpty || isTooLarge || hasCaptured
+    }
+
+    /// Back to before the first selection: no text, nothing to undo, and the menu
+    /// bar icon opens an empty popover, ready to paste into.
+    func clear() {
+        clearing?.invalidate()
+        reinspection?.invalidate()
+        hasCaptured = false
+        lacksAccessibility = false
+        selectedAt = nil
+        isTooLarge = false
+        heldText = ""
+        text = ""
+        lineCount = 0
+        preview.string = ""
+        preview.undoManager?.removeAllActions()
+        filter = nil
+        openRow = nil
+        inspector.inspect("", fresh: true)
+        // Open, the keyboard goes to the emptied text, for a paste.
+        if preview.window?.isVisible == true { preview.window?.makeFirstResponder(preview) }
     }
 
     /// After a config reload: the text inspected again with the new Patterns.
@@ -405,6 +449,19 @@ struct SelectionPopoverView: View {
             }
             Spacer(minLength: 8)
             Button {
+                model.clear()
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 30, height: 26)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .disabled(!model.canClear)
+            .help("Clear the selection")
+            .accessibilityLabel("Clear")
+            Button {
                 model.inspector.highlighting.toggle()
             } label: {
                 Image(systemName: "highlighter")
@@ -426,13 +483,16 @@ struct SelectionPopoverView: View {
         .frame(height: 50)
     }
 
+    /// Text for Open in Panel to take; without any, it opens the Panel as it is.
+    private var hasText: Bool { !model.text.isEmpty || model.isTooLarge }
+
     private var footer: some View {
         HStack(spacing: 8) {
             Button {
-                model.openInPanel()
+                if hasText { model.openInPanel() } else { openPanel() }
             } label: {
                 HStack(spacing: 6) {
-                    Text("Open in Panel")
+                    Text(hasText ? "Open in Panel" : "Open Panel")
                     Text(shortcut)
                         .font(.system(size: 11))
                         .padding(.horizontal, 5)
@@ -440,8 +500,9 @@ struct SelectionPopoverView: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(model.text.isEmpty && !model.isTooLarge)
-            .help("Work on the selection in the Panel: edit it, Pop Out its Matches, see their details")
+            .help(hasText
+                ? "Work on the selection in the Panel: edit it, Pop Out its Matches, see their details"
+                : "Open the Panel as you left it")
             Spacer(minLength: 8)
             Menu {
                 Button("Open Panel") { openPanel() }
@@ -941,6 +1002,8 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
     let model = SelectionPopoverModel()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let popover = NSPopover()
+    /// Opens the Panel as it is, then closes the popover.
+    private var openPanel: () -> Void = {}
 
     /// `openInPanel` opens text in the Panel; `openPanel` the Panel as it is. Then
     /// the popover closes, as a window opening from it wouldn't close it; the Panel
@@ -952,18 +1015,21 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
             self?.close()
         }
         model.onClose = { [weak self] in self?.close() }
+        self.openPanel = { [weak self] in
+            openPanel()
+            self?.close()
+        }
         popover.behavior = .transient
         popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: SelectionPopoverView(
             model: model,
-            openPanel: { [weak self] in
-                openPanel()
-                self?.close()
-            },
+            openPanel: { [weak self] in self?.openPanel() },
             close: { [weak self] in self?.close() }
         ))
         statusItem.button?.target = self
         statusItem.button?.action = #selector(toggle)
+        // A right-click (or a Control-click) shows the menu.
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         updateIcon()
     }
 
@@ -1002,6 +1068,7 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         statusItem.button?.highlight(false)
         closedAt = Date()
+        model.didClose(clearingAfter: TimeInterval(AppConfig.current.clearSelectionAfter))
         // Back to the app the selection came from, unless a textier window (the
         // Panel, a Match Window, Settings) is open to go back to.
         if !NSApp.windows.contains(where: { $0.isVisible && $0.styleMask.contains(.titled) }) {
@@ -1014,12 +1081,51 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
     private var closedAt = Date.distantPast
 
     @objc private func toggle() {
-        if popover.isShown {
+        if let event = NSApp.currentEvent,
+           event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
+            showMenu()
+        } else if popover.isShown {
             close()
         } else if Date().timeIntervalSince(closedAt) > 0.3 {
             open()
         }
     }
+
+    /// The menu bar icon's menu: what the popover's footer and gear offer, without
+    /// opening the popover first.
+    private func showMenu() {
+        if popover.isShown { close() }
+        // Set for this click only, so a left click still opens the popover.
+        statusItem.menu = menu()
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    func menu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        func add(_ title: String, _ action: Selector, key: String = "", enabled: Bool = true) {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.target = self
+            item.isEnabled = enabled
+        }
+        add("Show Selection", #selector(showPopover))
+        add("Open Panel", #selector(openPanelFromMenu))
+        add("Clear Selection", #selector(clearSelection), enabled: model.canClear)
+        menu.addItem(.separator())
+        add("Settings…", #selector(showSettings), key: ",")
+        add("Open Config File", #selector(openConfigFile))
+        menu.addItem(.separator())
+        add("Quit textier", #selector(quit), key: "q")
+        return menu
+    }
+
+    @objc private func showPopover() { open() }
+    @objc private func openPanelFromMenu() { openPanel() }
+    @objc private func clearSelection() { model.clear() }
+    @objc private func showSettings() { SettingsWindowController.show() }
+    @objc private func openConfigFile() { Editor.open(path: AppConfig.store.fileURL.path, line: nil) }
+    @objc private func quit() { NSApp.terminate(nil) }
 
     private func open() {
         guard let button = statusItem.button else { return }

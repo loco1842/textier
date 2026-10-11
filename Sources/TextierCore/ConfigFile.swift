@@ -59,6 +59,7 @@ public struct SkippedEntries: Sendable, Equatable {
 ///   "copyJSON": "raw",
 ///   "inspectorLayout": "tabs",
 ///   "appearance": "system",
+///   "clearSelectionAfter": 0,
 ///   "patterns": [
 ///     { "name": "json", "builtin": "json", "enabled": true, "actions": ["open", "copy-pretty", "copy"] },
 ///     { "name": "url", "regex": "…", "enabled": true, "actions": ["open-url", "copy"], "color": "#0969da" },
@@ -85,7 +86,9 @@ public struct SkippedEntries: Sendable, Equatable {
 /// `shortcut` uses the `Shortcut` string format and defaults to ⌃⌥T; an empty or
 /// missing `editorCommand` means unset. `copyJSON` is a `CopyJSON` raw value, `raw` by default; `inspectorLayout` an
 /// `InspectorLayout` raw value, `tabs` by default; `appearance` an `AppearanceSetting`
-/// raw value, `system` by default. A `theme` key, which named VS Code theme files
+/// raw value, `system` by default. `clearSelectionAfter` is how many seconds after
+/// the Selection Popover closes it clears its text, a whole number; 0 (the
+/// default) keeps it. A `theme` key, which named VS Code theme files
 /// once, is ignored with a warning.
 /// `grok` maps the user's own Grok Definition names to regex bodies, each replacing
 /// a bundled definition of the same name; a broken one is skipped with a warning,
@@ -120,6 +123,7 @@ public enum ConfigFile {
           "copyJSON": \(quote(config.copyJSON.rawValue)),
           "inspectorLayout": \(quote(config.inspectorLayout.rawValue)),
           "appearance": \(quote(config.appearance.rawValue)),
+          "clearSelectionAfter": \(config.clearSelectionAfter),
           "patterns": [
         \(patterns)
           ],
@@ -282,6 +286,15 @@ public enum ConfigFile {
             } else {
                 warnings.append(ConfigWarning(
                     #""appearance" \#(describe(value)) isn't "system", "light" or "dark"; following the system"#
+                ))
+            }
+        }
+        if let value = field("clearSelectionAfter", in: object) {
+            if case .number(let number) = value, let seconds = Int(number), seconds >= 0 {
+                config.clearSelectionAfter = seconds
+            } else {
+                warnings.append(ConfigWarning(
+                    #""clearSelectionAfter" \#(describe(value)) isn't a whole number of seconds; keeping the selection"#
                 ))
             }
         }

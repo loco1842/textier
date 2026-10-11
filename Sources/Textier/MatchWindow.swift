@@ -106,14 +106,17 @@ final class MatchWindowModel {
     }
     /// Why the edit doesn't parse as the Pattern any more; nil while it does.
     private(set) var problem: String?
-    /// The entry as popped out, for Revert; its Actions follow config reloads.
+    /// The entry as popped out, for View Original; its Actions follow config reloads.
     private var original: InspectorEntry
+    /// What Raw opens on: JSON beautified, anything else as it was.
+    private let opening: String
     @ObservationIgnored private var reparse: Timer?
 
     init(entry: InspectorEntry, patternName: String) {
         self.entry = entry
         original = entry
-        rawText = entry.text
+        opening = entry.isJSON ? JSONValue.container(from: entry.text)?.prettyPrinted ?? entry.text : entry.text
+        rawText = opening
         self.patternName = patternName
         (glyph, color) = Self.mark(of: patternName)
         // Plain text has nothing to parse, so it opens on its text, ready to edit.
@@ -131,7 +134,11 @@ final class MatchWindowModel {
     /// an edit keeps.
     var title: String { "\(patternName) \(original.index)" }
 
-    var isEdited: Bool { rawText != original.text }
+    /// Raw holds something other than the Match, as it was or beautified.
+    var isEdited: Bool { rawText != original.text && rawText != opening }
+
+    /// Raw holds the Match's text exactly as it is in the Input.
+    var showsOriginal: Bool { rawText == original.text }
 
     /// The Match Window shows JSON: its raw text is colored.
     var isJSONPattern: Bool { original.isJSON }
@@ -154,9 +161,15 @@ final class MatchWindowModel {
         canBeautify = false
     }
 
-    func revert() {
+    /// The Match's text as it is in the Input, undoing Beautify and any edit.
+    func viewOriginal() {
         rawText = original.text
         reparse?.invalidate()
+        showOriginalEntry()
+    }
+
+    /// The entry as popped out, for Raw holding its text or that beautified.
+    private func showOriginalEntry() {
         entry = original
         problem = nil
         updateCanBeautify()
@@ -176,7 +189,7 @@ final class MatchWindowModel {
     /// all of it, or else its text, with why it isn't one.
     private func parseRawText() {
         let text = rawText
-        guard text != original.text else { return revert() }
+        guard text != original.text, text != opening else { return showOriginalEntry() }
         var parsed: InspectorEntry
         if let match = Self.wholeMatch(of: text, named: patternName) {
             parsed = Self.entry(for: text, actions: match.actions)
@@ -224,7 +237,7 @@ final class MatchWindowModel {
         if let match = Self.wholeMatch(of: entry.text, named: patternName) {
             entry.actions = match.actions
         }
-        // So Revert (or typing back to the original) doesn't bring back old Actions.
+        // So View Original (or typing back to the original) doesn't bring back old Actions.
         if let match = Self.wholeMatch(of: original.text, named: patternName) {
             original.actions = match.actions
         }
@@ -309,7 +322,7 @@ private struct MatchWindowView: View {
 }
 
 /// Parsed or Raw, and the state of an edit: what's wrong with it, Beautify for
-/// JSON, and Revert.
+/// JSON, and View Original, back to the text as it is in the Input.
 private struct RawBar: View {
     @Bindable var model: MatchWindowModel
 
@@ -344,9 +357,10 @@ private struct RawBar: View {
                 Button("Beautify") { model.beautify() }
                     .controlSize(.small)
             }
-            if model.isEdited {
-                Button("Revert") { model.revert() }
+            if !model.showsOriginal {
+                Button("View Original") { model.viewOriginal() }
                     .controlSize(.small)
+                    .help("Show the text as it is in the Input, undoing Beautify and any edit")
             }
         }
     }
@@ -403,7 +417,7 @@ private struct RawEditor: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.text = $text
-        // Only an outside change (Beautify, Revert) replaces the text, keeping the
+        // Only an outside change (Beautify, View Original) replaces the text, keeping the
         // cursor and undo while typing. It goes through the text system as one undo
         // step: ⌘Z takes it back, and the typing before it then undoes against the
         // text it was typed into (setting `string` leaves those steps pointing into

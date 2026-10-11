@@ -127,6 +127,29 @@ extension AppTests {
             }
         }
 
+        @Test func clearingTheSelectionAfterAWhileIsWrittenToTheFile() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let settings = try app.openSettings()
+                #expect(settings.config.clearSelectionAfter == 0)
+                #expect(settings.clearSelectionChoices.map(SettingsModel.clearSelectionTitle) == [
+                    "Never", "After 30 seconds", "After 1 minute", "After 5 minutes", "After 15 minutes", "After 1 hour",
+                ])
+
+                settings.setClearSelectionAfter(300)
+                #expect(app.configText.contains(#""clearSelectionAfter": 300"#))
+                #expect(app.store.config.clearSelectionAfter == 300)
+
+                // A value of the file's own shows among the choices.
+                var config = Config.default
+                config.clearSelectionAfter = 45
+                try app.writeConfig(config)
+                #expect(settings.clearSelectionChoices.contains(45))
+                #expect(SettingsModel.clearSelectionTitle(45) == "After 45 seconds")
+            }
+        }
+
         @Test func changingCopyJSONWritesTheFileAndThePanelFollows() async throws {
             try await runInApp {
                 let app = try AppHarness()

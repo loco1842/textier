@@ -84,8 +84,15 @@ private struct GeneralSettings: View {
             if let draft = model.draft(.shortcut) {
                 DraftNote(draft: draft, fileValue: model.config.shortcut.symbols) { model.discardDraft(.shortcut) }
             }
+            Picker("Clear the selection", selection: Binding(
+                get: { model.config.clearSelectionAfter }, set: { model.setClearSelectionAfter($0) }
+            )) {
+                ForEach(model.clearSelectionChoices, id: \.self) { seconds in
+                    Text(SettingsModel.clearSelectionTitle(seconds)).tag(seconds)
+                }
+            }
         } footer: {
-            Text("Opens the selected text from any app in the menu bar popover.")
+            Text("Opens the selected text from any app in the menu bar popover. It keeps the selection for the menu bar icon until the next one, or clears it this long after it closes.")
                 .foregroundStyle(.secondary)
         }
         Section {

@@ -149,6 +149,27 @@ final class SettingsModel {
         apply { $0.inspectorLayout = layout }
     }
 
+    /// Seconds after the Selection Popover closes that it clears its text; 0 never.
+    func setClearSelectionAfter(_ seconds: Int) {
+        apply { $0.clearSelectionAfter = max(0, seconds) }
+    }
+
+    /// The choices Settings offers for `clearSelectionAfter`, with the file's own
+    /// value among them when it's another.
+    var clearSelectionChoices: [Int] {
+        let choices = [0, 30, 60, 300, 900, 3600]
+        let current = config.clearSelectionAfter
+        return choices.contains(current) ? choices : (choices + [current]).sorted()
+    }
+
+    /// "Never", "After 30 seconds", "After 5 minutes", "After 1 hour".
+    static func clearSelectionTitle(_ seconds: Int) -> String {
+        guard seconds > 0 else { return "Never" }
+        if seconds % 3600 == 0 { return "After " + counted(seconds / 3600, "hour") }
+        if seconds % 60 == 0 { return "After " + counted(seconds / 60, "minute") }
+        return "After " + counted(seconds, "second")
+    }
+
     // MARK: Appearance
 
     /// System, Light or Dark; the app follows once the file is written.

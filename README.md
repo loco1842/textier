@@ -39,14 +39,15 @@ When was that in local time, and how long ago? What's in that JSON? Can you jump
 - Lists every Match in a collapsible list. Click a row to open it on its parsed view in place: a datetime's local time and age, JSON beautified, a file path's line.
 - Filter the list by Pattern with one click. The chips are draggable, and keep the same order as the Panel's tabs.
 - Copy, Pop Out or open in your editor right from the row.
-- Edit the text, or paste something new in by hand.
+- Edit the text, or paste something new in by hand. **Clear** empties it, or have it clear itself a while after the popover closes (Settings → General).
+- Right-click the menu bar icon for Show Selection, Open Panel, Clear Selection, Settings and Quit.
 - **It never reads your clipboard.** textier copies the selection with a simulated ⌘C and puts your clipboard back afterwards.
 
 ### The Panel: for longer work on a text
 
 - An editable Input with Matches highlighted, line numbers and Wrap Lines.
 - Beside it the **Inspector**: every Match, nested ones included, grouped by Pattern in tabs or in one list (**⌘L**).
-- **⌘1–⌘9** switch tabs, **⌘E** toggles highlighting, **⌘⇧P** pops the selected Match out into its own **Match Window**. You can keep many Match Windows open side by side.
+- **⌘1–⌘9** switch tabs, **⌘E** toggles highlighting, **⌘⇧P** pops the selected Match out into its own **Match Window**. You can keep many Match Windows open side by side; their Raw view opens JSON beautified, to edit as a scratch copy, with **View Original** a click away.
 
 ### A JSON Viewer that understands JSON
 
@@ -105,6 +106,7 @@ textier runs in the menu bar, with no Dock icon. Move `build/Textier.app` to `/A
 |---|---|
 | **⌃⌥T** | Open the Selection Popover with the selected text (changeable in Settings) |
 | Click the menu bar icon | Reopen the popover with the last selection |
+| Right-click the menu bar icon | Show Selection, Open Panel, Clear Selection, Settings…, Quit |
 | **↑ ↓**, **→ ←**, **Space**, **Return** | Move through the Matches, open or close a row, run its first Action |
 | **Esc** | Close the popover or hide the Panel |
 | **⌘L** / **⌘E** / **⌘1–9** / **⌘⇧P** | Panel: list layout / highlighting / switch tab / Pop Out |
@@ -119,6 +121,7 @@ textier runs in the menu bar, with no Dock icon. Move `build/Textier.app` to `/A
   "shortcut": "ctrl+option+t",
   "editorCommand": "",
   "appearance": "system",
+  "clearSelectionAfter": 0,
   "patterns": [
     { "name": "json", "builtin": "json", "enabled": true, "actions": ["open", "copy-pretty", "copy"] },
     { "name": "ticket", "regex": "%{MYTICKET:key}", "actions": ["copy"], "color": { "light": "#9a6700", "dark": "#e3b341" } },
@@ -131,6 +134,7 @@ textier runs in the menu bar, with no Dock icon. Move `build/Textier.app` to `/A
 
 - Patterns are tried in order; when two overlap, the earlier wins.
 - The first Action listed is what Return or a double-click runs.
+- `clearSelectionAfter` clears the Selection Popover's text that many seconds after it closes; `0` keeps it.
 - A broken entry is skipped with a warning, shown in Settings and as a ⚠︎ on the menu bar icon, and the rest keep working.
 
 ## Project layout

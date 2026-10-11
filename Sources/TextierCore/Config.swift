@@ -1,6 +1,6 @@
 /// The ordered Patterns textier detects with, the user's own Grok Definitions,
-/// the global shortcut, the editor command template, how the Panel copies, and
-/// whether the app is light or dark.
+/// the global shortcut, the editor command template, how the Panel copies,
+/// whether the app is light or dark, and when the Selection Popover forgets its text.
 public struct Config: Sendable, Equatable {
     public var patterns: [Pattern]
     /// The user's own Grok Definitions, in file order. Each replaces a bundled one
@@ -17,10 +17,14 @@ public struct Config: Sendable, Equatable {
     /// Light, dark, or following the system. The JSON Viewer colors with GitHub
     /// Light or Dark to match.
     public var appearance: AppearanceSetting
+    /// Seconds after the Selection Popover closes that it clears its text; 0 keeps
+    /// it until the next selection.
+    public var clearSelectionAfter: Int
 
     public init(
         patterns: [Pattern], grok: [GrokDefinition] = [], shortcut: Shortcut = .default, editorCommand: String? = nil,
-        copyJSON: CopyJSON = .raw, inspectorLayout: InspectorLayout = .tabs, appearance: AppearanceSetting = .system
+        copyJSON: CopyJSON = .raw, inspectorLayout: InspectorLayout = .tabs, appearance: AppearanceSetting = .system,
+        clearSelectionAfter: Int = 0
     ) {
         self.patterns = patterns
         self.grok = grok
@@ -29,6 +33,7 @@ public struct Config: Sendable, Equatable {
         self.copyJSON = copyJSON
         self.inspectorLayout = inspectorLayout
         self.appearance = appearance
+        self.clearSelectionAfter = clearSelectionAfter
     }
 
     public static let `default` = Config(patterns: Pattern.shipped)

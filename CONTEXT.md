@@ -63,7 +63,7 @@ textier's main window, for longer work on a text, opened from the Selection Popo
 _Avoid_: Popover, input window, main panel
 
 **Selection Popover**:
-What the global shortcut opens under textier's menu bar icon, for quick work on the text selected in the app in front (copied with a simulated ⌘C, the clipboard put back after): its first lines unwrapped with their Matches highlighted, above one collapsible list of the Matches, filtered by Pattern or not (its chips keep the Panel's tab order; a last chip lists the Plain Text between them). A click on a row selects it and opens it on its parsed view, the Inspector's card (JSON beautified, Tree a click away), one row at a time; its buttons (Copy, Pop Out, …) run its Actions. Its text can be edited, or typed or pasted in by hand. It never reads the clipboard; with nothing selected it says so. The menu bar icon opens it again with the last selection. Deeper work is a Pop Out, or the Panel, which it opens the text in.
+What the global shortcut opens under textier's menu bar icon, for quick work on the text selected in the app in front (copied with a simulated ⌘C, the clipboard put back after): its first lines unwrapped with their Matches highlighted, above one collapsible list of the Matches, filtered by Pattern or not (its chips keep the Panel's tab order; a last chip lists the Plain Text between them). A click on a row selects it and opens it on its parsed view, the Inspector's card (JSON beautified, Tree a click away), one row at a time; its buttons (Copy, Pop Out, …) run its Actions. Its text can be edited, or typed or pasted in by hand. It never reads the clipboard; with nothing selected it says so. The menu bar icon opens it again with the last selection, until Clear empties it (or, when Settings says so, it clears itself a set time after closing). Deeper work is a Pop Out, or the Panel, which it opens the text in (or as it was, with no text). A right-click on the menu bar icon shows a menu: Show Selection, Open Panel, Clear Selection, Settings, the config file, Quit.
 _Avoid_: Clipboard Popover, menu, menu bar window, mini Panel
 
 **Inspector**:
@@ -71,7 +71,7 @@ The side of the Panel that lists every Match in the Input, nested ones included,
 _Avoid_: Right panel, detail pane, sidebar, match list
 
 **Match Window**:
-An Inspector view of one Match, popped out into a window of its own so it can stay open beside others. Many can be open at once.
+An Inspector view of one Match, popped out into a window of its own so it can stay open beside others. Many can be open at once. Its Raw view is an editable scratch copy of the Match's text (JSON beautified at first); View Original puts back the text as it is in the Input.
 _Avoid_: Detail window, child window, viewer window, pop-out
 
 **Settings**:

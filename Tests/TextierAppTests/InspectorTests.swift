@@ -193,8 +193,12 @@ extension AppTests {
                 app.capture(AppFixtures.monologLine)
                 try app.runAction("Pop Out")
                 let model = try #require(app.matchWindows.last).model
-                #expect(model.rawText == AppFixtures.jsonPayload)
-                #expect(!model.isEdited)
+                // Raw opens on the JSON beautified, which isn't an edit: Copy still
+                // copies the Match as it is.
+                #expect(model.rawText == JSONValue.parse(AppFixtures.jsonPayload)?.prettyPrinted)
+                #expect(!model.isEdited && !model.showsOriginal && !model.canBeautify)
+                model.run(.action(.copy))
+                #expect(app.copied == AppFixtures.jsonPayload)
 
                 // An edit is parsed again: the JSON Viewer, preview and Actions follow it.
                 model.rawText = #"{"url": "http://edited.test/x", "n": 2}"#
@@ -219,10 +223,12 @@ extension AppTests {
                 #expect(model.problem == "Not valid JSON from line 2. Shown as text.")
                 if case .json = model.entry.detail { Issue.record("still JSON") }
 
-                model.revert()
+                // View Original: the text as it is in the Input, which Beautify lays out again.
+                model.viewOriginal()
                 #expect(model.rawText == AppFixtures.jsonPayload)
                 #expect(model.entry.text == AppFixtures.jsonPayload)
                 #expect(!model.isEdited && model.problem == nil)
+                #expect(model.showsOriginal && model.canBeautify)
             }
         }
 
@@ -267,6 +273,7 @@ extension AppTests {
                 app.capture(AppFixtures.monologLine)
                 try app.runAction("Pop Out")
                 let model = try #require(app.matchWindows.last).model
+                model.viewOriginal()
                 #expect(model.canBeautify)
 
                 model.beautify()
@@ -342,7 +349,7 @@ extension AppTests {
             }
         }
 
-        @Test func revertKeepsTheActionsOfTheLastReload() async throws {
+        @Test func viewOriginalKeepsTheActionsOfTheLastReload() async throws {
             try await runInApp {
                 let app = try AppHarness()
                 defer { app.tearDown() }
@@ -357,10 +364,10 @@ extension AppTests {
                 try app.writeConfig(config)
                 model.rawText = "https://other.test/"
                 app.spin(0.4)
-                model.revert()
+                model.viewOriginal()
                 #expect(model.entry.actions == [.copy])
 
-                // Typing the original text back is a Revert too.
+                // Typing the original text back is View Original too.
                 model.rawText = "https://other.test/"
                 app.spin(0.4)
                 model.rawText = original
@@ -385,10 +392,8 @@ extension AppTests {
                 let window = try #require(app.matchWindows.last)
                 let model = window.model
 
-                model.beautify()
-                for _ in 0..<20 where model.entry.text != model.rawText { app.spin(0.05) }
-                app.spin(0.1)
-                #expect(model.entry.text == model.rawText)
+                // Raw opens on it beautified.
+                #expect(model.rawText == JSONValue.parse(string)?.prettyPrinted)
                 #expect(model.problem == nil)
                 if case .json = model.entry.detail {} else { Issue.record("not parsed as JSON") }
                 #expect(app.outlineView(in: window.window)?.node(keyPath: "b[1]") != nil)
@@ -435,9 +440,10 @@ extension AppTests {
                 // lands on the text it was typed into (a test's steps share one group).
                 let undoManager = try #require(textView.undoManager)
                 for _ in 0..<3 where undoManager.canUndo { undoManager.undo() }
-                #expect(textView.string == AppFixtures.jsonPayload)
+                let opening = try #require(JSONValue.parse(AppFixtures.jsonPayload)?.prettyPrinted)
+                #expect(textView.string == opening)
                 app.spin(0.4)
-                #expect(controller.model.rawText == AppFixtures.jsonPayload)
+                #expect(controller.model.rawText == opening)
                 #expect(!controller.model.isEdited)
             }
         }
@@ -462,7 +468,7 @@ extension AppTests {
 
                 textView.setSelectedRange(NSRange(location: 0, length: 6))
                 textView.copy(nil)
-                #expect(app.copied == String(AppFixtures.jsonPayload.prefix(6)))
+                #expect(app.copied == String(textView.string.prefix(6)))
                 #expect(lastOwnCopy == app.pasteboard.changeCount)
             }
         }

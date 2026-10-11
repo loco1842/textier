@@ -480,6 +480,94 @@ extension AppTests {
             #expect(MenuBarGlyph.image.size == NSSize(width: 18, height: 18))
         }
 
+        @Test func clearEmptiesThePopoverAsBeforeTheFirstSelection() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let popover = SelectionPopoverModel()
+                #expect(!popover.canClear)
+                popover.show(selection: AppFixtures.monologLine)
+                popover.toggle(popover.rows[0])
+                #expect(popover.canClear)
+
+                popover.clear()
+                #expect(popover.text.isEmpty && popover.preview.string.isEmpty)
+                #expect(popover.rows.isEmpty && popover.openRow == nil)
+                #expect(popover.inspector.inspection.tabs.isEmpty)
+                #expect(!popover.hasCaptured && popover.subtitle.isEmpty)
+                #expect(!popover.canClear)
+                // Nothing to undo back into.
+                #expect(popover.preview.undoManager?.canUndo != true)
+
+                // A capture that found nothing clears too, back to "No selection yet".
+                popover.show(selection: nil)
+                #expect(popover.canClear)
+                popover.clear()
+                #expect(!popover.hasCaptured)
+            }
+        }
+
+        @Test func theSelectionClearsAWhileAfterThePopoverClosesWhenSetTo() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let popover = SelectionPopoverModel()
+                popover.show(selection: AppFixtures.monologLine)
+
+                // Never, by default.
+                popover.didClose(clearingAfter: 0)
+                app.spin(0.3)
+                #expect(popover.text == AppFixtures.monologLine)
+
+                // Opening again before the time is up keeps it.
+                popover.didClose(clearingAfter: 0.2)
+                popover.didOpen()
+                app.spin(0.35)
+                #expect(popover.text == AppFixtures.monologLine)
+
+                // A new selection does too.
+                popover.didClose(clearingAfter: 0.2)
+                popover.show(selection: "see https://x.test")
+                app.spin(0.35)
+                #expect(popover.text == "see https://x.test")
+
+                popover.didClose(clearingAfter: 0.2)
+                app.spin(0.35)
+                #expect(popover.text.isEmpty && !popover.hasCaptured)
+            }
+        }
+
+        @Test func openInPanelWithoutTextOpensThePanelAsItIs() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                var openedPanel = 0
+                var openedText: [String] = []
+                let controller = SelectionPopoverController(
+                    openInPanel: { openedText.append($0) }, openPanel: { openedPanel += 1 }
+                )
+
+                // The menu bar icon's right-click menu.
+                let menu = controller.menu()
+                #expect(menu.items.map(\.title) == [
+                    "Show Selection", "Open Panel", "Clear Selection", "", "Settings…", "Open Config File", "", "Quit textier",
+                ])
+                func item(_ title: String) throws -> NSMenuItem { try #require(menu.items.first { $0.title == title }) }
+                // Nothing to clear yet; the Panel opens all the same.
+                #expect(try !item("Clear Selection").isEnabled)
+                #expect(try item("Open Panel").isEnabled)
+                menu.performActionForItem(at: menu.index(of: try item("Open Panel")))
+                #expect(openedPanel == 1 && openedText.isEmpty)
+
+                controller.model.show(selection: "see https://x.test")
+                let withText = controller.menu()
+                let clear = try #require(withText.items.first { $0.title == "Clear Selection" })
+                #expect(clear.isEnabled)
+                withText.performActionForItem(at: withText.index(of: clear))
+                #expect(controller.model.text.isEmpty)
+            }
+        }
+
         @Test func veryLargeTextIsLeftForThePanel() async throws {
             try await runInApp {
                 let app = try AppHarness()

@@ -390,6 +390,35 @@ struct ConfigFileTests {
         #expect(loaded.warnings.first?.message.hasPrefix(#""appearance""#) == true)
     }
 
+    // MARK: clearSelectionAfter
+
+    @Test func clearSelectionAfterDefaultsToNeverAndIsWrittenOnFirstLaunch() throws {
+        #expect(try #require(load(#"{ "patterns": [] }"#).config).clearSelectionAfter == 0)
+        let text = try #require(String(data: ConfigFile.encode(.default), encoding: .utf8))
+        #expect(text.contains(#""clearSelectionAfter": 0"#))
+    }
+
+    @Test(arguments: [0, 30, 300])
+    func clearSelectionAfterLoadsAndRoundTrips(seconds: Int) throws {
+        let loaded = load(#"{ "clearSelectionAfter": \#(seconds), "patterns": [] }"#)
+        #expect(try #require(loaded.config).clearSelectionAfter == seconds)
+        #expect(loaded.warnings.isEmpty)
+
+        var config = Config.default
+        config.clearSelectionAfter = seconds
+        #expect(ConfigFile.load(ConfigFile.encode(config)) == ConfigLoad(config: config, warnings: []))
+    }
+
+    @Test(arguments: ["-5", "1.5", #""60""#, "true"])
+    func aClearSelectionAfterThatIsntWholeSecondsWarnsAndKeepsTheSelection(value: String) throws {
+        let loaded = load(#"{ "clearSelectionAfter": \#(value), "patterns": [] }"#)
+
+        #expect(try #require(loaded.config).clearSelectionAfter == 0)
+        #expect(loaded.warnings.count == 1)
+        #expect(loaded.warnings.first?.isFatal == false)
+        #expect(loaded.warnings.first?.message.hasPrefix(#""clearSelectionAfter""#) == true)
+    }
+
     @Test func aThemeKeyIsIgnoredWithAWarning() throws {
         let loaded = load(#"{ "theme": { "dark": "dark.json" }, "patterns": [] }"#)
 
