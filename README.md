@@ -83,11 +83,23 @@ When was that in local time, and how long ago? What's in that JSON? Can you jump
 ## Requirements
 
 - macOS 26 (Tahoe) or later
-- Xcode 26 or later, to build from source
+- Xcode 26 or later, only to build from source
 
 ## Install
 
-There are no prebuilt releases yet; build it from source:
+### Download
+
+1. Get the latest `textier-x.y.z.dmg` (or `.zip`) from the [Releases page](https://github.com/loco1842/textier/releases/latest). It runs on both Apple silicon and Intel Macs.
+2. Drag **Textier** to **Applications**.
+3. textier isn't signed with an Apple Developer ID, so macOS quarantines it and refuses to open it ("can't be opened" / "is damaged"). Clear the quarantine flag once:
+
+   ```bash
+   xattr -d com.apple.quarantine /Applications/Textier.app
+   ```
+
+4. Open it. textier lives in the menu bar, with no Dock icon.
+
+### Build from source
 
 ```bash
 git clone https://github.com/loco1842/textier.git
@@ -96,9 +108,11 @@ scripts/bundle.sh          # builds build/Textier.app (release, ad-hoc signed)
 open build/Textier.app
 ```
 
-textier runs in the menu bar, with no Dock icon. Move `build/Textier.app` to `/Applications` to keep it.
+A build of your own isn't quarantined, so it needs no `xattr`.
 
-**Accessibility permission.** To copy your selection, textier sends ⌘C to the app in front, which macOS allows only with Accessibility. The first time you press the shortcut, grant it in **System Settings → Privacy & Security → Accessibility**. The build is ad-hoc signed, so macOS asks again after each rebuild.
+### Accessibility permission
+
+To copy your selection, textier sends ⌘C to the app in front, which macOS allows only with Accessibility. The first time you press the shortcut, grant it in **System Settings → Privacy & Security → Accessibility**. The app is ad-hoc signed, so macOS asks again after each update or rebuild: remove the old textier entry from the list, and add the new one.
 
 ## Usage
 

@@ -1,0 +1,86 @@
+# Builds a universal textier.app and publishes it on the Releases page when a
+# version tag (v1.2.3) is pushed. Run by hand, it builds and keeps the files as
+# a workflow artifact instead. The app is ad-hoc signed, not notarized: the
+# README tells users to clear the quarantine flag.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Core tests
+        run: scripts/test.sh --skip TextierAppTests
+
+      - name: Build textier.app
+        env:
+          TEXTIER_VERSION: ${{ steps.version.outputs.version }}
+          TEXTIER_BUILD: ${{ github.run_number }}
+          TEXTIER_UNIVERSAL: "1"
+        run: |
+          scripts/bundle.sh
+          lipo -archs build/Textier.app/Contents/MacOS/Textier
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent build/Textier.app "dist/textier-$VERSION.zip"
+          # A disk image with Applications beside the app, to drag it there.
+          staging="$(mktemp -d)"
+          cp -R build/Textier.app "$staging/"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create -volname textier -srcfolder "$staging" -ov -format UDZO "dist/textier-$VERSION.dmg"
+          (cd dist && shasum -a 256 textier-* > SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "textier $VERSION" \
+            --generate-notes \
+            --notes-file - <<'NOTES'
+          Download `textier-*.dmg` (or the `.zip`), drag **Textier** to Applications, then clear the quarantine flag, since the app isn't signed with an Apple Developer ID:
+
+          ```bash
+          xattr -d com.apple.quarantine /Applications/Textier.app
+          ```
+
+          textier needs **Accessibility** (System Settings → Privacy & Security → Accessibility) to copy your selection. Grant it again after each update.
+          NOTES
+
+      - name: Keep the build
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: textier-${{ steps.version.outputs.version }}
+          path: dist/*

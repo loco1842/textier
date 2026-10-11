@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 # Assembles build/Textier.app, a menu bar agent (no Dock icon), from the SwiftPM binary.
+# TEXTIER_VERSION and TEXTIER_BUILD set its version (0.1.0 and 1 by default);
+# TEXTIER_UNIVERSAL=1 builds for Apple silicon and Intel both, as releases do.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 source scripts/xcode-env.sh
 
-swift build -c release --product Textier
-bin_dir="$(swift build -c release --show-bin-path)"
+version="${TEXTIER_VERSION:-0.1.0}"
+build_number="${TEXTIER_BUILD:-1}"
+arch_flags=()
+if [[ "${TEXTIER_UNIVERSAL:-0}" == 1 ]]; then
+    arch_flags=(--arch arm64 --arch x86_64)
+fi
+
+# macOS's bash 3.2 calls an empty array unbound under `set -u`, hence the `+`.
+swift build -c release --product Textier ${arch_flags[@]+"${arch_flags[@]}"}
+bin_dir="$(swift build -c release --show-bin-path ${arch_flags[@]+"${arch_flags[@]}"})"
 
 app="build/Textier.app"
 rm -rf "$app"
@@ -39,9 +49,9 @@ cat > "$app/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>$version</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$build_number</string>
     <key>LSMinimumSystemVersion</key>
     <string>$min_os</string>
     <key>LSUIElement</key>

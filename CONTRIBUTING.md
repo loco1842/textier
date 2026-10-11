@@ -41,6 +41,14 @@ scripts/test.sh --filter SelectionPopoverTests
 - `TextierAppTests` run the real app in-process. Before writing one, read [`docs/agents/testing.md`](docs/agents/testing.md): AppKit has several traps there (run-loop timers rather than `Task.sleep`, no `NSApp.activate()` in app code, and more) that the harness works around.
 - New behavior comes with a test. A UI change that tests can't see (drag and drop, how something looks) gets a step in the manual test list.
 
+### Releases
+
+CI (`.github/workflows/ci.yml`) builds textier and runs the core tests on every push and pull request. A pushed version tag publishes a release (`.github/workflows/release.yml`): a universal, ad-hoc signed `Textier.app` as a `.dmg` and a `.zip` on the Releases page.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
 ### Recording the demo
 
 `scripts/make-demo.sh` captures the README demo from the real app and assembles `docs/demo/demo.gif` and `demo.mp4`. It takes the screen for about 20 seconds and needs Screen Recording permission for your terminal.
