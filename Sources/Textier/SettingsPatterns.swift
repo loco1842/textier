@@ -2,7 +2,10 @@ import Foundation
 import TextierCore
 
 /// Settings' Patterns section: the Patterns in priority order, and the editor for
-/// the selected one. Patterns are addressed by their index in the Config.
+/// the selected one. Patterns are addressed by their index in the Config. The views
+/// can ask about an index once more after its Pattern is deleted (a binding updating
+/// before the list catches up), so an index past the end reads as nothing and
+/// changes nothing.
 extension SettingsModel {
     /// What a Pattern is, for what Settings lets the user do with it.
     enum PatternKind {
@@ -27,6 +30,8 @@ extension SettingsModel {
     /// The first regex Pattern named like a shipped Preset is that Preset; others
     /// sharing its name are User Patterns in its group.
     func kind(ofPatternAt index: Int) -> PatternKind {
+        // Gone: nothing to edit, as for a Built-in Pattern.
+        guard config.patterns.indices.contains(index) else { return .builtin }
         let pattern = config.patterns[index]
         guard pattern.regex != nil else { return .builtin }
         guard Preset.all.contains(where: { $0.name == pattern.name }) else { return .user }
@@ -35,17 +40,19 @@ extension SettingsModel {
 
     /// The Pattern's name's color, as the Inspector shows it.
     func color(ofPatternAt index: Int) -> PatternColor {
-        config.resolvedColors[index]
+        let colors = config.resolvedColors
+        return colors.indices.contains(index) ? colors[index] : Palette.fallback
     }
 
     /// The name field: the draft while there is one, else the file's.
     func nameText(at index: Int) -> String {
-        drafts[.patternName(index)]?.text ?? config.patterns[index].name
+        drafts[.patternName(index)]?.text ?? (config.patterns.indices.contains(index) ? config.patterns[index].name : "")
     }
 
     /// The regex field: the draft while there is one, else the file's.
     func regexText(at index: Int) -> String {
-        drafts[.patternRegex(index)]?.text ?? config.patterns[index].regex ?? ""
+        drafts[.patternRegex(index)]?.text
+            ?? (config.patterns.indices.contains(index) ? config.patterns[index].regex : nil) ?? ""
     }
 
     /// The Grok Definitions Pattern regexes are checked against: the file's, broken
@@ -70,6 +77,7 @@ extension SettingsModel {
     }
 
     func setPatternEnabled(_ enabled: Bool, at index: Int) {
+        guard config.patterns.indices.contains(index) else { return }
         apply { $0.patterns[index].enabled = enabled }
     }
 
@@ -212,6 +220,7 @@ extension SettingsModel {
 
     /// Sets the Pattern's own color; nil goes back to its palette default.
     func setPatternColor(_ color: PatternColor?, at index: Int) {
+        guard config.patterns.indices.contains(index) else { return }
         apply { $0.patterns[index].color = color }
     }
 

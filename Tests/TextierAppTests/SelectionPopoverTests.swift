@@ -568,6 +568,38 @@ extension AppTests {
             }
         }
 
+        @Test func commandCommaOpensSettingsFromThePopover() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let popover = SelectionPopoverModel()
+                var closed = 0
+                let window = NSWindow(
+                    contentRect: NSRect(origin: .zero, size: SelectionPopoverView.size),
+                    styleMask: [.borderless], backing: .buffered, defer: false
+                )
+                window.isReleasedWhenClosed = false
+                window.contentView = NSHostingView(rootView: SelectionPopoverView(
+                    model: popover, openPanel: {}, close: { closed += 1 }
+                ))
+                Effects.present(window)
+                defer { window.close() }
+                popover.show(selection: "see https://x.test")
+                app.spin(0.2)
+                #expect(app.settingsWindow == nil)
+
+                let event = NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, characters: ",", charactersIgnoringModifiers: ",",
+                    isARepeat: false, keyCode: 43
+                )!
+                #expect(window.performKeyEquivalent(with: event))
+                app.spin(0.2)
+                #expect(app.settingsWindow != nil)
+                #expect(closed == 1)
+            }
+        }
+
         @Test func veryLargeTextIsLeftForThePanel() async throws {
             try await runInApp {
                 let app = try AppHarness()

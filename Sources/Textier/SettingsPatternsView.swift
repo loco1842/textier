@@ -102,7 +102,14 @@ private struct PatternRow: View {
     let index: Int
 
     var body: some View {
-        let pattern = model.config.patterns[index]
+        // A row (and the editor below) can be drawn once more after its Pattern is
+        // deleted, before the list catches up: then it draws nothing.
+        if model.config.patterns.indices.contains(index) {
+            row(model.config.patterns[index])
+        }
+    }
+
+    private func row(_ pattern: TextierCore.Pattern) -> some View {
         HStack(spacing: 8) {
             Circle()
                 .fill(Color(model.color(ofPatternAt: index), \.solid))
@@ -140,9 +147,14 @@ private struct PatternEditor: View {
     @FocusState private var regexFocused: Bool
 
     var body: some View {
-        let pattern = model.config.patterns[index]
+        if model.config.patterns.indices.contains(index) {
+            form(model.config.patterns[index])
+        }
+    }
+
+    private func form(_ pattern: TextierCore.Pattern) -> some View {
         let kind = model.kind(ofPatternAt: index)
-        Form {
+        return Form {
             if kind == .builtin {
                 Section {
                     LabeledContent("Name", value: pattern.name)

@@ -140,6 +140,27 @@ extension AppTests {
             }
         }
 
+        @Test func deletingTheLastPatternWhileItsEditorShowsDoesntCrash() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let settings = try app.openSettings()
+                settings.section = .patterns
+                app.spin(0.2)
+
+                // The editor shows the new, last Pattern; the minus button deletes it.
+                settings.addPattern()
+                let added = try #require(settings.selectedPattern)
+                app.spin(0.3)
+                settings.deletePattern(at: added)
+                app.spin(0.3)
+                #expect(settings.selectedPattern == nil)
+                #expect(settings.config.patterns.count == added)
+                try #require(app.settingsWindow).window.layoutIfNeeded()
+                try #require(app.settingsWindow).window.displayIfNeeded()
+            }
+        }
+
         @Test func addDeleteAndDuplicateChangeTheFile() async throws {
             try await runInApp {
                 let app = try AppHarness()

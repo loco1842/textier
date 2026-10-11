@@ -415,7 +415,25 @@ struct SelectionPopoverView: View {
             footer
         }
         .frame(width: Self.size.width, height: Self.size.height)
+        .background(shortcuts)
         .onExitCommand(perform: close)
+    }
+
+    /// ⌘, opens Settings (the popover closing behind it) and ⌘Q quits, as from the
+    /// menu bar icon's menu; the buttons are only there for their shortcuts.
+    private var shortcuts: some View {
+        ZStack {
+            Button("Settings…") {
+                SettingsWindowController.show()
+                close()
+            }
+            .keyboardShortcut(",")
+            Button("Quit") { NSApp.terminate(nil) }
+                .keyboardShortcut("q")
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     /// Before the first selection, or when the shortcut found none.
