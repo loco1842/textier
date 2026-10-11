@@ -249,7 +249,7 @@ private struct AppearanceSettings: View {
 
     var body: some View {
         Section {
-            Picker("Appearance", selection: Binding(get: { model.config.appearance }, set: model.setAppearance)) {
+            Picker("Appearance", selection: Binding(get: { model.config.appearance }, set: { model.setAppearance($0) })) {
                 Text("System").tag(AppearanceSetting.system)
                 Text("Light").tag(AppearanceSetting.light)
                 Text("Dark").tag(AppearanceSetting.dark)
