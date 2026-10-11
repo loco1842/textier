@@ -358,10 +358,10 @@ final class SelectionPopoverModel {
 /// click on a row opens it on its parsed view (the Inspector's card, JSON
 /// beautified), its buttons run its Actions, and the arrows, Space and Return work
 /// the list; Esc closes it. Anything deeper is a Pop Out or the Panel away, in the
-/// footer with the gear's Settings and Quit.
+/// footer; Settings and Quit are in the menu bar icon's right-click menu.
 struct SelectionPopoverView: View {
     let model: SelectionPopoverModel
-    /// Opens the Panel as it is, from the gear.
+    /// Opens the Panel as it is, from the footer when there's no text.
     let openPanel: () -> Void
     let close: () -> Void
 
@@ -504,21 +504,6 @@ struct SelectionPopoverView: View {
                 ? "Work on the selection in the Panel: edit it, Pop Out its Matches, see their details"
                 : "Open the Panel as you left it")
             Spacer(minLength: 8)
-            Menu {
-                Button("Open Panel") { openPanel() }
-                Button("Settings…") { SettingsWindowController.show() }
-                    .keyboardShortcut(",")
-                Button("Open Config File") { Editor.open(path: AppConfig.store.fileURL.path, line: nil) }
-                Divider()
-                Button("Quit textier") { NSApp.terminate(nil) }
-                    .keyboardShortcut("q")
-            } label: {
-                Image(systemName: "gearshape")
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .fixedSize()
-            .help("The Panel, Settings, the config file, Quit")
         }
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
@@ -1091,8 +1076,8 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
         }
     }
 
-    /// The menu bar icon's menu: what the popover's footer and gear offer, without
-    /// opening the popover first.
+    /// The menu bar icon's menu: the Panel, Settings, the config file and Quit,
+    /// without opening the popover first.
     private func showMenu() {
         if popover.isShown { close() }
         // Set for this click only, so a left click still opens the popover.
@@ -1116,7 +1101,7 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
         add("Settings…", #selector(showSettings), key: ",")
         add("Open Config File", #selector(openConfigFile))
         menu.addItem(.separator())
-        add("Quit textier", #selector(quit), key: "q")
+        add("Quit", #selector(quit), key: "q")
         return menu
     }
 
