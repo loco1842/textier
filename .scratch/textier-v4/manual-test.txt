@@ -1,0 +1,89 @@
+textier v4 manual test — Settings, grok and Perl-style Patterns
+
+Build: scripts/bundle.sh (rebuilding drops the Accessibility grant; re-grant it), then open build/Textier.app.
+Back up ~/.config/textier/config.json first; these steps edit it.
+Report failures as "step N: what you saw".
+
+Everything else is automated: `swift test` drives SettingsModel through the in-process harness (every edit,
+draft, reload, warning, the test box's Matches and Fields, grok add/paste/override, New Pattern from this) and
+the compile step, grok and Fields at the core seams. What's left here is what tests can't see: the SwiftUI
+controls themselves (recorder, pickers, drag, color wells, the test box's tint), the menu bar, the window's
+layout with its sidebar, and real editors/files.
+
+TEST LINES — select ONE line, press ctrl+option+T
+
+A. Monolog log line:
+[2026-10-07 11:17:10] develop.WARNING: [REPOSITORY SCOPE LEAK] __call invoked with non-empty scopeQueries {"url":"http://app.bo.test/player/api/v1/signin","repository":"Modules\\Notification\\Repositories\\EmailTemplateRepository","method":"where","scope_count":1,"caller_file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/Modules/Notification/Listeners/SendLoginFromNewIPEmailToPlayer.php","caller_line":118,"caller_function":"findActiveTemplate","backtrace":[{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/Modules/Notification/Services/EmailTemplateService.php","line":80,"function":"__call"}]}
+
+F. nginx access line:
+203.0.113.7 - - [09/Oct/2026:10:15:32 +0700] "GET /api/v1/signin?next=%2Fhome HTTP/1.1" 200 512 "https://shop.example.com/login" "Mozilla/5.0 (Macintosh)"
+
+G. Java log line with a stack frame (select both lines):
+2026-10-09 10:15:32,118 ERROR [main] com.example.billing.InvoiceService - Invoice 4711 failed
+    at com.example.billing.InvoiceService.charge(InvoiceService.java:87)
+
+H. Numbers (for shared names):
+pi is 3.14, the answer 42, took 12ms
+
+STEPS
+
+Opening Settings
+1. Click the menu bar icon: it has "Open Panel", "Open Config File", "Settings…" (⌘,) and "Quit"; there is no "Reload Config". Choose Settings…: one window opens, centered, with a sidebar (General, Appearance, Patterns, Grok Definitions), each with an icon, and General selected.
+2. Capture line A, then press ⌘, in the Panel: the same Settings window comes to the front (no second one). Close it and press ⌘, again: it opens afresh.
+
+General
+3. Click the Shortcut button: it reads "Type the shortcut…". Press ⌃⌥Y: it shows ⌃⌥Y; ⌃⌥Y now opens the Panel from another app and ⌃⌥T no longer does. Set it back to ⌃⌥T the same way.
+4. Click Shortcut and press ⇧Y: a red note says to add ⌃, ⌥ or ⌘, with "Use ⌃⌥T"; click it and the draft goes. Click Shortcut and press Esc: recording stops, nothing changes.
+5. Pick a shortcut another app already owns (e.g. ⌘Space if Spotlight has it): General shows "Couldn't register the shortcut … still using ctrl+option+t".
+6. Type "nosuchcommand {path}" as the Editor command, press Return, click Test: the config file opens in the default app and General shows the "Couldn't run `nosuchcommand …`" warning. Put your real command back (or clear it) and click Test: the config file opens in your editor and the warning goes.
+7. Switch "A click on JSON copies" to Beautified, click the JSON in the Panel's Input: the pasteboard has it beautified. Switch Inspector layout to List: the Panel's Inspector turns into one list at once.
+
+Appearance
+8. Click Choose… for the Light theme, pick a VS Code theme JSON (any .json works for the dialog): the path is written with ~ and the JSON Viewer's Text mode follows. Type "missing.json" in Dark and press Return: Appearance shows the theme warning; the clear (x) button restores the GitHub theme and the warning goes.
+
+Patterns
+9. Open Patterns: the list shows json, escaped-json, url, datetime, file path, log level in that order, each with a color dot, its regex in small mono text (Built-in for the first two) and an on/off switch. The window is wide enough for list and editor side by side; check it with the sidebar showing.
+10. Turn on log level with its switch: the Panel (line A) gains a "log level" tab with WARNING.
+11. Drag log level above url: the order sticks (open the config file: log level now comes before url). Type "path" in the filter: only file path shows; dragging is off while filtering. Clear the filter.
+12. Select json: the editor only says it's a Built-in Pattern (no name, regex, Actions or color to edit).
+13. Select url: the name, regex (left-aligned, mono), Test box, Actions switches and Color pickers show. The Test box holds line A with the URL tinted in url's color and "1 Match".
+14. In the regex field, type a\Kb: the error "\K isn't supported" shows under it at once, the Test box shows no tint, and the file is unchanged (press Return: still unchanged, "Not saved until it compiles."). Type (?<x: "unclosed group name (?<x". Put back \bhttps?://[^\s"'`)\]}>]+ and press Return.
+15. Turn Open in Window on for url: the Panel's url entry gains "Open in Window". "Restore Default" appears; click it: the Action and regex go back, the button disappears.
+16. Drag the Light color well for url to red: the Panel's url tint follows (while dragging it rewrites the file on every change — say if that feels laggy). Click "Use the Default Color": back to blue.
+17. With url selected, click Duplicate: "url copy" appears right after url and opens in the editor; it can be deleted (Delete button and the − under the list) while url can't.
+18. Click + under the list: "new pattern" appears at the end with \bTODO\b. Rename it "numeric" and set the regex \b\d+\.\d+\b; add another (+), name it "numeric" with \b\d+\b and turn on Open in Window. Both rows show the same dot color. Capture line H: one "numeric" tab with 3.14 and 42 (not 3 or 14 separately; 12ms isn't a whole word); the 42 entry offers Open in Window, the 3.14 entry doesn't. Pop out 42 (⌘⇧P), save the config file unchanged from your editor: the Match Window still offers what the integer Pattern has.
+
+The test box and Fields
+19. Select log level, type develop\.\w+ in the regex (don't press Return): "develop.WARNING" is tinted in the Test box as you type; the file is unchanged until you press Return.
+20. Type (?<level>WARNING|ERROR) and click inside WARNING in the Test box: a "level → WARNING" row shows under it. Edit the Test box text (type ERROR somewhere): the new ERROR is tinted too.
+
+Grok Definitions
+21. Open Grok Definitions: Bundled lists USER … URI then HTTPDUSER, EMAILADDRESS, EMAILLOCALPART (77), each with its regex in small mono text and a New Pattern button. Type "iso" in the filter: ISO8601_TIMEZONE, ISO8601_SECOND, TIMESTAMP_ISO8601.
+22. Under Yours, add MYTICKET with [A-Z]+-\d+: it appears under Yours. Add "MY TICKET" with x: an inline error about letters, digits and _. Add LOOP with a%{LOOP}: "grok definitions loop: LOOP → LOOP", not added.
+23. Paste into the paste box and click Add Lines:
+      # from Logstash
+      MYHOST [a-z]+\.internal
+      MYPORT \d{2,5}
+      MYADDR %{MYHOST}:%{MYPORT}
+      just-one-word
+    MYHOST, MYPORT and MYADDR are added; "Line 5: "just-one-word" isn't NAME regex" shows (line numbers count the comment line).
+24. Add LOGLEVEL with (?:WARN|ERR): it's marked "overrides bundled", and the bundled LOGLEVEL row says "overridden". Delete it with its trash button: it goes. Try deleting MYHOST: refused, "MYADDR uses it".
+25. Click New Pattern on TIMESTAMP_ISO8601: Settings switches to Patterns with "timestamp iso8601" selected, regex %{TIMESTAMP_ISO8601}, Copy on.
+
+Grok and Fields in the Panel (the done scenario)
+26. Capture line F and press ⌘, in the Panel (that puts line F in the Test box). In Patterns add a Pattern, name it "access", regex
+      %{IPV4:client} - - \[%{HTTPDATE:time}\] "%{WORD:method} %{URIPATHPARAM:path}
+    The Test box tints the Match; click it: client, time, method, path rows. Press Return.
+27. In the Panel, the "access" tab's entry shows client, time, method, path rows above its text; clicking "client" copies 203.0.113.7 ("Copied" by the pointer). The path row has an Open in Editor button (the path is also a file path Match; that's expected).
+28. Add a Pattern "timing" with took %{NUMBER:ms:int}ms and capture line H: its Field row is labelled "ms (int)".
+29. Add a Pattern "java frame" with %{JAVASTACKTRACEPART} and capture line G: class, method, file, line rows (com.example.billing.InvoiceService, charge, InvoiceService.java, 87). Pop it out: the Match Window shows the same rows.
+
+Hand edits while Settings is open
+30. With Settings on Patterns, add a Pattern by hand in your editor and save: the list updates without reopening. Type an invalid regex ( in url's regex and press Return (a draft), then insert a Pattern at the top of the file by hand and save: url's field still shows ( with a note that the file changed, now on url's new row.
+31. In the file, add { "name": "being fixed", "regex": "(unclosed", "actions": ["copy"] } and save: Patterns shows its warning (unbalanced parenthesis …; skipped) with "Open Config File". Now change Copy JSON in General: the file still contains the "being fixed" entry where you put it.
+32. Make the file invalid JSON and save: Settings says it won't overwrite the file until it can be read; edits don't stick. Fix the file: edits work again.
+
+Bundle
+33. In build/Textier.app/Contents/Resources there's NOTICE-logstash-patterns-core.txt (the Elasticsearch NOTICE and the Apache-2.0 license).
+
+Restore your config.json backup when done.

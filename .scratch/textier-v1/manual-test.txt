@@ -1,0 +1,19 @@
+textier manual test lines — select ONE line, press ctrl+option+T
+
+1. Monolog log line (datetime, JSON, URL, file paths):
+[2026-10-07 11:17:10] develop.WARNING: [REPOSITORY SCOPE LEAK] __call invoked with non-empty scopeQueries {"url":"http://app.bo.test/player/api/v1/signin","repository":"Modules\\Notification\\Repositories\\EmailTemplateRepository","method":"where","scope_count":1,"caller_file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/Modules/Notification/Listeners/SendLoginFromNewIPEmailToPlayer.php","caller_line":118,"caller_function":"findActiveTemplate","backtrace":[{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/Modules/Notification/Services/EmailTemplateService.php","line":80,"function":"__call"},{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/Modules/Notification/Listeners/SendLoginFromNewIPEmailToPlayer.php","line":118,"function":"findActiveTemplate"},{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php","line":603,"function":"shouldQueue"},{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php","line":552,"function":"handlerWantsToBeQueued"},{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php","line":479,"function":"Illuminate\\Events\\{closure}"}]}
+
+2. 25-item array (should open collapsed in the JSON Viewer):
+{"ids":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]}
+
+3. Escaped JSON (payload node gets a parse-inline badge):
+{"payload":"{\"a\":1,\"b\":[1,2]}"}
+
+4. Escaped JSON two levels deep:
+{"payload":"{\"inner\":\"{\\\"deep\\\":true}\"}"}
+
+5. Noise (only {"real":true} should highlight):
+items[0] and matrix[1][2] and {} and [] and {"real":true}
+
+6. Log level + a file path without a line:
+[2026-10-09 09:00:00] app.ERROR: failed reading ~/.zshrc

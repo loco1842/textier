@@ -1,0 +1,42 @@
+textier v2 manual test — Panel and Inspector revamp
+
+Build: scripts/bundle.sh (rebuilding drops the Accessibility grant; re-grant it), then open build/Textier.app.
+Report failures as "step N: what you saw".
+
+Everything else is automated: `swift test` runs Tests/TextierAppTests, which drive a real Panel in-process
+(synthetic clicks, drags, double-clicks and keys; the SwiftUI Inspector through its model and AppKit focus).
+What's left here is what tests can't see: the global shortcut from another app, real pointer tracking,
+how things look, and clicking the SwiftUI controls themselves.
+
+TEST LINES — select ONE line, press ctrl+option+T
+
+A. Monolog log line (datetime, JSON, URL, file paths):
+[2026-10-07 11:17:10] develop.WARNING: [REPOSITORY SCOPE LEAK] __call invoked with non-empty scopeQueries {"url":"http://app.bo.test/player/api/v1/signin","repository":"Modules\\Notification\\Repositories\\EmailTemplateRepository","method":"where","scope_count":1,"caller_file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/Modules/Notification/Listeners/SendLoginFromNewIPEmailToPlayer.php","caller_line":118,"caller_function":"findActiveTemplate","backtrace":[{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/Modules/Notification/Services/EmailTemplateService.php","line":80,"function":"__call"},{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/Modules/Notification/Listeners/SendLoginFromNewIPEmailToPlayer.php","line":118,"function":"findActiveTemplate"},{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php","line":603,"function":"shouldQueue"},{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php","line":552,"function":"handlerWantsToBeQueued"},{"file":"/Users/mac/Documents/Projects/dv/acme-store-upgraded/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php","line":479,"function":"Illuminate\\Events\\{closure}"}]}
+
+B. URL with a query and fragment:
+see https://a.test/x?q=a%20b&id=7&id=8#top for details
+
+C. Datetimes with an offset and as epochs:
+2026-10-07T11:17:10.123Z 1759835830 1759835830123 2026-10-07T11:17:10+02:00
+
+D. Escaped JSON (payload node gets a {…} badge):
+{"payload":"{\"a\":1,\"b\":[1,2]}"}
+
+E. Plain text only (no Inspector):
+nothing structured in this sentence at all
+
+STEPS
+
+1. Select line A in another app and press ctrl+option+T: the Panel opens (about 1100×650, centered, floating) with the Input left and the Inspector right; tabs read datetime 1, json 1, url 1, file path 6, Plain Text, each Pattern tab with a color dot matching its tint in the Input.
+2. Without Accessibility granted, the footer says the Input is the clipboard; with it, the selection is captured.
+3. Hover the datetime: the pointer is the copy cursor (arrow with +); move onto plain text: the I-beam. Click the datetime: "Copied" appears next to the pointer at once.
+4. Drag with the real mouse across part of the JSON: that part is selected and nothing is copied.
+5. Drag the divider, press Esc, capture again: the size and divider are kept. Quit and relaunch: still kept.
+6. Click the tab buttons, then list rows: each selects; the Action bar's first button is emphasized; its buttons work (Open in Browser opens your browser, Open in Editor opens Cursor/your editor).
+7. Click rows in a URL's and a datetime's detail: each copies its value; the datetime's "Read as UTC" switch updates every row.
+8. On the JSON: the Tree/Text switch works; the node toolbar buttons (Copy Value, Copy Key, Copy Key Path, Expand All, Collapse All) work on the selected node; right-click shows no menu.
+9. In Text mode, keys, strings and numbers are colored like VS Code's GitHub theme; click the "url" or a "file" value: it opens. Switch the system appearance: Light/Dark themes swap, and Pattern tints follow their light/dark pair.
+10. Capture line D: the {…} badge shows; Parse Inline / Show as String and Open in Window from the node toolbar work.
+11. ⌘E toggles the Highlighting toolbar button's state too; ⌘⇧P opens a Match Window that looks like the Inspector's view of that entry (Action bar + detail, no tabs, and no button that opens it again).
+12. Set "inspectorLayout": "list" and save, capture line A: no tab bar; one list with sections datetime, json, url, file path, Plain Text, each with its dot and count; click a section's chevron to collapse it; click rows across sections and the detail follows.
+13. Click the Tabs/List switch in the toolbar (or press ⌘L): the Inspector flips between tabs and one list; capture again and it stays as you left it.
