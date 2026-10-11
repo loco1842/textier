@@ -34,7 +34,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Core tests
-        run: scripts/test.sh --skip TextierAppTests
+        run: scripts/test.sh --skip TextierAppTests || { tail -80 .build/test.log; exit 1; }
 
       - name: Build textier.app
         env:
