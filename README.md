@@ -45,8 +45,8 @@ When was that in local time, and how long ago? What's in that JSON? Can you jump
 
 ### The Panel: for longer work on a text
 
-- An editable Input with Matches highlighted, line numbers and Wrap Lines.
-- Beside it the **Inspector**: every Match, nested ones included, grouped by Pattern in tabs or in one list (**⌘L**).
+- An editable Input with Matches highlighted, line numbers and Wrap Lines. Clicks are plain text clicks; **⌘-click** a Match to inspect it. **⌘G** goes to a line (or `line:column`).
+- Beside it the **Inspector**: every Match, nested ones included, grouped by Pattern in tabs or in one list (**⌘L**). Sort any Pattern's Matches by value (datetimes earliest or latest first, everything else A → Z, numbers as numbers) or keep them in text order.
 - **⌘1–⌘9** switch tabs, **⌘E** toggles highlighting, **⌘⇧P** pops the selected Match out into its own **Match Window**. You can keep many Match Windows open side by side; their Raw view opens JSON beautified, to edit as a scratch copy, with **View Original** a click away.
 
 ### A JSON Viewer that understands JSON
@@ -123,8 +123,12 @@ To copy your selection, textier sends ⌘C to the app in front, which macOS allo
 | Right-click the menu bar icon | Show Selection, Open Panel, Clear Selection, Settings…, Quit |
 | **↑ ↓**, **→ ←**, **Space**, **Return** | Move through the Matches, open or close a row, run its first Action |
 | **Esc** | Close the popover or hide the Panel |
+| **⌘-click** a Match | Inspect it (a plain click just places the cursor) |
+| **⌘G** | Go to a line, or `line:column`, in the Panel or a Match Window's Raw editor |
 | **⌘L** / **⌘E** / **⌘1–9** / **⌘⇧P** | Panel: list layout / highlighting / switch tab / Pop Out |
-| **⌘,** | Settings |
+| **⌘,** / **⌘Q** | Settings / Quit |
+
+Every shortcut, and the ⌘ of ⌘-click and ⌘1–9, can be changed in **Settings → Shortcuts**.
 
 ### Config file
 
@@ -136,6 +140,7 @@ To copy your selection, textier sends ⌘C to the app in front, which macOS allo
   "editorCommand": "",
   "appearance": "system",
   "clearSelectionAfter": 0,
+  "shortcuts": { "goToLine": "cmd+g", "toggleWrapLines": "cmd+option+w", "matchClick": "cmd", "…": "…" },
   "patterns": [
     { "name": "json", "builtin": "json", "enabled": true, "actions": ["open", "copy-pretty", "copy"] },
     { "name": "ticket", "regex": "%{MYTICKET:key}", "actions": ["copy"], "color": { "light": "#9a6700", "dark": "#e3b341" } },

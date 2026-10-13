@@ -256,7 +256,7 @@ extension AppTests {
                 let settings = try app.openSettings()
                 #expect(settings.warnings(in: .patterns).count == 1)
 
-                settings.setCopyJSON(.pretty)
+                settings.setClearSelectionAfter(30)
                 #expect(app.configText.contains(#""regex": "(unclosed""#))
                 #expect(settings.warnings(in: .patterns).count == 1)
             }

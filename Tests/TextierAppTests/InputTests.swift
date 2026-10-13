@@ -119,7 +119,7 @@ extension AppTests {
     @MainActor
     @Suite("Clicks and Highlighting in the Input")
     struct InputTests {
-        @Test func aClickOnAMatchOpensItInTheInspectorAndPlacesTheCursor() async throws {
+        @Test func aClickOnAMatchOnlyPlacesTheCursor() async throws {
             try await runInApp {
                 let app = try AppHarness()
                 defer { app.tearDown() }
@@ -128,73 +128,57 @@ extension AppTests {
 
                 app.click(onText: "11:17:10")
 
-                #expect(app.selectedTabTitle == "datetime")
-                #expect(app.model.selectedEntry?.text == "2026-10-07 11:17:10")
-                #expect(app.copied == nil)
-                // The cursor stays where the click put it, so editing inside a Match works.
+                // A text click, as anywhere else: the Inspector stays where it was.
+                #expect(app.selectedTabTitle == "json")
                 #expect(app.textView.selectedRange().length == 0)
                 #expect(NSLocationInRange(app.textView.selectedRange().location, app.range(of: "11:17:10")))
             }
         }
 
-        @Test func aDoubleClickOnAMatchCopiesIt() async throws {
+        @Test func aCommandClickOnAMatchSelectsItInTheInspector() async throws {
             try await runInApp {
                 let app = try AppHarness()
                 defer { app.tearDown() }
                 app.capture(AppFixtures.monologLine)
 
-                app.doubleClick(onText: "11:17:10")
+                app.commandClick(onText: "11:17:10")
 
-                #expect(app.copied == "2026-10-07 11:17:10")
-                #expect(CopiedHUD.panel?.isVisible == true)
                 #expect(app.selectedTabTitle == "datetime")
-                // It fades in, holds fully shown, then fades out and goes.
-                app.spin(0.3)
-                #expect(CopiedHUD.panel?.alphaValue == 1)
-                app.spin(1.2)
-                #expect(CopiedHUD.panel?.isVisible == false)
+                #expect(app.model.selectedEntry?.text == "2026-10-07 11:17:10")
+                // Its text is selected, so ⌘C copies it; nothing is copied by the click.
+                #expect(app.textView.selectedRange() == app.range(of: "2026-10-07 11:17:10"))
+                #expect(app.copied == nil)
             }
         }
 
-        @Test func aClickOnJSONCopiesItRawOrBeautifiedPerCopyJSON() async throws {
+        @Test func theMatchClickModifiersComeFromTheConfig() async throws {
             try await runInApp {
                 let app = try AppHarness()
                 defer { app.tearDown() }
-                app.capture(AppFixtures.monologLine)
-
-                app.doubleClick(onText: #""method""#)
-                #expect(app.copied == AppFixtures.jsonPayload)
-
                 var config = Config.default
-                config.copyJSON = .pretty
-                try app.writeConfig(String(decoding: ConfigFile.encode(config), as: UTF8.self))
-                app.doubleClick(onText: #""method""#)
-                #expect(app.copied == JSONValue.parse(AppFixtures.jsonPayload)?.prettyPrinted)
-            }
-        }
-
-        @Test func anUnknownCopyJSONWarnsAndCopiesRaw() async throws {
-            try await runInApp {
-                let app = try AppHarness(config: #"""
-                { "copyJSON": "fancy", "patterns": [{ "name": "json", "builtin": "json", "actions": ["copy"] }] }
-                """#)
-                defer { app.tearDown() }
+                config.shortcuts.matchClick = [.option]
+                try app.writeConfig(config)
                 app.capture(AppFixtures.monologLine)
 
-                app.doubleClick(onText: #""method""#)
-                #expect(app.copied == AppFixtures.jsonPayload)
-                #expect(app.model.warnings.contains { $0.contains("copyJSON") })
+                app.commandClick(onText: "11:17:10")
+                #expect(app.selectedTabTitle == "json")
+                app.commandClick(onText: "11:17:10", modifiers: [.option])
+                #expect(app.selectedTabTitle == "datetime")
             }
         }
 
-        @Test func doubleClickingAURLNestedInTheJSONCopiesTheWholeJSON() async throws {
+        @Test func aDoubleClickOnAMatchSelectsAWordAndCopiesNothing() async throws {
             try await runInApp {
                 let app = try AppHarness()
                 defer { app.tearDown() }
                 app.capture(AppFixtures.monologLine)
 
-                app.doubleClick(onText: "app.bo.test")
-                #expect(app.copied == AppFixtures.jsonPayload)
+                app.doubleClick(onText: "invoked")
+                #expect(app.textView.selectedRange() == app.range(of: "invoked"))
+                app.doubleClick(onText: "11:17:10")
+                #expect(app.textView.selectedRange().length > 0)
+                #expect(app.copied == nil)
+                #expect(app.selectedTabTitle == "json")
             }
         }
 
@@ -213,20 +197,7 @@ extension AppTests {
             }
         }
 
-        @Test func aDoubleClickOnPlainTextSelectsAWord() async throws {
-            try await runInApp {
-                let app = try AppHarness()
-                defer { app.tearDown() }
-                app.capture(AppFixtures.monologLine)
-
-                app.doubleClick(onText: "invoked")
-
-                #expect(app.textView.selectedRange() == app.range(of: "invoked"))
-                #expect(app.selectedTabTitle == "json")
-            }
-        }
-
-        @Test func thePointingHandShowsOverMatchesOnlyWhileHighlighting() async throws {
+        @Test func thePointingHandShowsOverMatchesOnlyWhileTheModifiersAreHeld() async throws {
             try await runInApp {
                 let app = try AppHarness()
                 defer { app.tearDown() }
@@ -237,10 +208,15 @@ extension AppTests {
                 }
 
                 // Cursor rects, like a link's, so the window shows the hand over a pill
-                // itself and never flashes the I-beam on the way.
+                // itself and never flashes the I-beam on the way; only with ⌘ held.
+                #expect(!handOver("11:17:10"))
+                app.textView.updateModifiers([.command])
                 #expect(handOver("11:17:10"))
                 #expect(!handOver("invoked"))
+                app.textView.updateModifiers([])
+                #expect(!handOver("11:17:10"))
 
+                app.textView.updateModifiers([.command])
                 app.shortcut("e")
                 #expect(!handOver("11:17:10"))
             }
@@ -255,10 +231,7 @@ extension AppTests {
                 #expect(app.shortcut("e"))
                 #expect(!app.model.highlighting)
                 #expect(app.tint(at: "2026-10-07").background == nil)
-                app.click(onText: "11:17:10")
-                #expect(app.selectedTabTitle == "json")
-                app.doubleClick(onText: "11:17:10")
-                #expect(app.copied == nil)
+                app.commandClick(onText: "11:17:10")
                 #expect(app.selectedTabTitle == "json")
 
                 app.type(" 1759835830", at: (app.textView.string as NSString).length)
@@ -429,7 +402,7 @@ extension AppTests {
                 app.textView.insertText("ab ", replacementRange: NSRange(location: 0, length: 0))
                 #expect(pillTexts() == ["2026-10-07 11:17:10", AppFixtures.jsonPayload])
                 let datetime = app.range(of: "2026-10-07 11:17:10")
-                app.textView.mouseMoved(with: app.mouseEvent(.mouseMoved, at: app.point(inInput: datetime)))
+                app.textView.mouseMoved(with: app.mouseEvent(.mouseMoved, at: app.point(inInput: datetime), modifiers: [.command]))
                 #expect(app.textView.pills.first { $0.range == datetime }?.isStrong == true)
                 #expect(color(at: datetime.location) != nil)
                 #expect(color(at: 0) == nil)
@@ -577,10 +550,14 @@ extension AppTests {
                 app.capture(AppFixtures.monologLine)
                 let datetime = app.range(of: "2026-10-07 11:17:10")
 
-                app.textView.mouseMoved(with: app.mouseEvent(.mouseMoved, at: app.point(inInput: datetime)))
+                app.textView.mouseMoved(with: app.mouseEvent(.mouseMoved, at: app.point(inInput: datetime), modifiers: [.command]))
                 #expect(app.textView.pills.first { $0.range == datetime }?.isStrong == true)
 
-                app.textView.mouseMoved(with: app.mouseEvent(.mouseMoved, at: app.point(inInput: app.range(of: "invoked"))))
+                app.textView.mouseMoved(with: app.mouseEvent(.mouseMoved, at: app.point(inInput: app.range(of: "invoked")), modifiers: [.command]))
+                #expect(app.textView.pills.first { $0.range == datetime }?.isStrong == false)
+
+                // Without ⌘ held, no pill deepens.
+                app.textView.mouseMoved(with: app.mouseEvent(.mouseMoved, at: app.point(inInput: datetime)))
                 #expect(app.textView.pills.first { $0.range == datetime }?.isStrong == false)
             }
         }

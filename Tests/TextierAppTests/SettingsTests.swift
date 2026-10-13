@@ -71,7 +71,7 @@ extension AppTests {
             }
         }
 
-        @Test func aShortcutThatCantBeRegisteredSaysSoInGeneral() async throws {
+        @Test func aShortcutThatCantBeRegisteredSaysSoInShortcuts() async throws {
             try await runInApp {
                 let app = try AppHarness()
                 defer { app.tearDown() }
@@ -82,10 +82,11 @@ extension AppTests {
                 #expect(app.configText.contains(#""shortcut": "ctrl+option+y""#))
                 // Tried, then the previous one put back.
                 #expect(app.registeredShortcuts.suffix(2) == [Self.ctrlOptionY, .default])
-                let general = settings.warnings(in: .general).map(\.message)
-                #expect(general.count == 1)
-                #expect(general.first?.contains("Couldn't register the shortcut ctrl+option+y") == true)
-                #expect(general.first?.contains("still using ctrl+option+t") == true)
+                let shortcuts = settings.warnings(in: .shortcuts).map(\.message)
+                #expect(shortcuts.count == 1)
+                #expect(shortcuts.first?.contains("Couldn't register the shortcut ctrl+option+y") == true)
+                #expect(shortcuts.first?.contains("still using ctrl+option+t") == true)
+                #expect(settings.warnings(in: .general).isEmpty)
                 #expect(settings.warnings(in: .appearance).isEmpty)
             }
         }
@@ -105,8 +106,9 @@ extension AppTests {
                 #expect(app.configText == before)
                 #expect(settings.config.shortcut == .default)
 
-                settings.recordShortcut(modifiers: [.control], key: "-")
-                #expect(settings.draft(.shortcut)?.text == "⌃-")
+                settings.recordShortcut(modifiers: [.control], key: "↩")
+                #expect(settings.draft(.shortcut)?.text == "⌃↩")
+                #expect(settings.draft(.shortcut)?.problem.contains("punctuation") == true)
                 #expect(app.configText == before)
 
                 settings.discardDraft(.shortcut)
@@ -147,22 +149,6 @@ extension AppTests {
                 try app.writeConfig(config)
                 #expect(settings.clearSelectionChoices.contains(45))
                 #expect(SettingsModel.clearSelectionTitle(45) == "After 45 seconds")
-            }
-        }
-
-        @Test func changingCopyJSONWritesTheFileAndThePanelFollows() async throws {
-            try await runInApp {
-                let app = try AppHarness()
-                defer { app.tearDown() }
-                app.capture(AppFixtures.monologLine)
-                let settings = try app.openSettings()
-
-                settings.setCopyJSON(.pretty)
-                #expect(app.configText.contains(#""copyJSON": "pretty""#))
-                #expect(settings.config.copyJSON == .pretty)
-                app.panel.makeKeyAndOrderFront(nil)
-                app.doubleClick(onText: #""method""#)
-                #expect(app.copied == JSONValue.parse(AppFixtures.jsonPayload)?.prettyPrinted)
             }
         }
 
@@ -304,10 +290,10 @@ extension AppTests {
                 let settings = try app.openSettings()
 
                 var config = Config.default
-                config.copyJSON = .pretty
+                config.clearSelectionAfter = 30
                 config.shortcut = Self.ctrlOptionY
                 try app.writeConfig(config)
-                #expect(settings.config.copyJSON == .pretty)
+                #expect(settings.config.clearSelectionAfter == 30)
                 #expect(settings.config.shortcut == Self.ctrlOptionY)
                 #expect(app.registeredShortcuts.last == Self.ctrlOptionY)
             }
@@ -320,18 +306,18 @@ extension AppTests {
                 // No `reload()` here: the file watcher has to notice.
                 // As an editor saves: a new file renamed over the old one.
                 var config = Config.default
-                config.copyJSON = .pretty
+                config.clearSelectionAfter = 30
                 let saved = app.folder.appendingPathComponent("config.json.saving")
                 try ConfigFile.encode(config).write(to: saved)
                 #expect(rename(saved.path, app.store.fileURL.path) == 0)
-                for _ in 0..<40 where app.store.config.copyJSON != .pretty { app.spin(0.05) }
-                #expect(app.store.config.copyJSON == .pretty)
+                for _ in 0..<40 where app.store.config.clearSelectionAfter != 30 { app.spin(0.05) }
+                #expect(app.store.config.clearSelectionAfter == 30)
 
                 // The watch moved to the new file, so a write in place is seen too.
-                config.copyJSON = .raw
+                config.clearSelectionAfter = 0
                 try ConfigFile.encode(config).write(to: app.store.fileURL)
-                for _ in 0..<40 where app.store.config.copyJSON != .raw { app.spin(0.05) }
-                #expect(app.store.config.copyJSON == .raw)
+                for _ in 0..<40 where app.store.config.clearSelectionAfter != 0 { app.spin(0.05) }
+                #expect(app.store.config.clearSelectionAfter == 0)
             }
         }
 
@@ -347,11 +333,11 @@ extension AppTests {
                 let store = ConfigStore(fileURL: link)
 
                 var config = Config.default
-                config.copyJSON = .pretty
+                config.clearSelectionAfter = 30
                 try store.write(config)
                 #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target.path)
-                #expect(String(decoding: try Data(contentsOf: target), as: UTF8.self).contains(#""copyJSON": "pretty""#))
-                #expect(store.config.copyJSON == .pretty)
+                #expect(String(decoding: try Data(contentsOf: target), as: UTF8.self).contains(#""clearSelectionAfter": 30"#))
+                #expect(store.config.clearSelectionAfter == 30)
             }
         }
 
@@ -363,7 +349,7 @@ extension AppTests {
                 settings.recordShortcut(modifiers: [.shift], key: "y")
 
                 // Settings' own writes aren't changes from outside.
-                settings.setCopyJSON(.pretty)
+                settings.setClearSelectionAfter(30)
                 #expect(settings.draft(.shortcut)?.fileChanged == false)
 
                 var config = Config.default
@@ -373,7 +359,7 @@ extension AppTests {
                 #expect(draft.text == "⇧Y")
                 #expect(draft.fileChanged)
                 #expect(settings.config.shortcut == Self.ctrlOptionY)
-                #expect(settings.config.copyJSON == .raw)
+                #expect(settings.config.clearSelectionAfter == 0)
 
                 // A valid press settles it.
                 settings.recordShortcut(modifiers: [.control, .option], key: "t")
@@ -389,15 +375,15 @@ extension AppTests {
                 let settings = try app.openSettings()
 
                 try app.writeConfig(#"{ "patterns": [ "#)
-                settings.setCopyJSON(.pretty)
+                settings.setClearSelectionAfter(30)
                 #expect(app.configText == #"{ "patterns": [ "#)
                 #expect(settings.writeError != nil)
                 #expect(settings.warnings(in: .general).contains { $0.isFatal })
 
                 try app.writeConfig(Config.default)
                 #expect(settings.writeError == nil)
-                settings.setCopyJSON(.pretty)
-                #expect(app.configText.contains(#""copyJSON": "pretty""#))
+                settings.setClearSelectionAfter(30)
+                #expect(app.configText.contains(#""clearSelectionAfter": 30"#))
             }
         }
 
@@ -421,9 +407,9 @@ extension AppTests {
                 let settings = try app.openSettings()
 
                 let general = settings.warnings(in: .general).map(\.message)
-                #expect(general.count == 2)
-                #expect(general.contains { $0.hasPrefix("Shortcut") })
-                #expect(general.contains { $0.contains("copyJSON") })
+                #expect(general == [#""copyJSON" is ignored: ⌘-click a Match, then Copy or Copy Beautified"#])
+                #expect(settings.warnings(in: .shortcuts).map(\.message).count == 1)
+                #expect(settings.warnings(in: .shortcuts).first?.message.hasPrefix("Shortcut") == true)
                 #expect(settings.warnings(in: .appearance).map(\.message).count == 1)
                 #expect(settings.warnings(in: .patterns).map(\.message) == [
                     #"Pattern "ticket": unbalanced parenthesis (at character 1); skipped"#,
@@ -442,6 +428,7 @@ extension AppTests {
             #expect(section(#""theme" is ignored: the JSON Viewer uses GitHub Light and Dark; "appearance" picks light or dark"#) == .appearance)
             #expect(section(#""inspectorLayout" "grid" isn't "tabs" or "list"; using "tabs""#) == .general)
             #expect(section("Config file isn't valid JSON (line 2)") == .general)
+            #expect(section(#"Shortcut "goToLine" "g" isn't like "cmd+g"; using its default"#) == .shortcuts)
             #expect(section("Grok Definition A: grok definitions loop: A → B → A; skipped") == .grokDefinitions)
             #expect(section(#""grok" [] isn't like { "NAME": "regex" }; ignored"#) == .grokDefinitions)
         }

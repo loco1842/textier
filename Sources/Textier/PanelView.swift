@@ -28,6 +28,16 @@ private struct PanelHeader: View {
     var leadingInset: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// A button's tooltip, with its command's shortcut as the Config sets it.
+    private func help(_ text: String, _ command: ShortcutCommand) -> String {
+        AppConfig.store.config.shortcuts[command].map { "\(text) (\($0.symbols))" } ?? text
+    }
+
+    /// "⌘-click", as the Config's Match click modifiers make it.
+    private var clickName: String {
+        Shortcut.symbols(of: AppConfig.store.config.shortcuts.matchClick) + "-click"
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             GlassEffectContainer {
@@ -35,21 +45,21 @@ private struct PanelHeader: View {
                     GlassButtonGroup {
                         GlassIconButton(
                             title: "Highlighting", systemImage: "highlighter", isOn: model.highlighting,
-                            help: "Tint Matches in the Input; click inspects, double-click copies (⌘E)"
+                            help: help("Tint Matches in the Input; \(clickName) one to inspect it", .toggleHighlighting)
                         ) { model.highlighting.toggle() }
                         GlassIconButton(
                             title: "Wrap Lines", systemImage: "arrow.turn.down.left", isOn: model.wrapsLines,
-                            help: "Wrap long lines in the Input, or scroll them sideways"
+                            help: help("Wrap long lines in the Input, or scroll them sideways", .toggleWrapLines)
                         ) { model.wrapsLines.toggle() }
                     }
                     GlassButtonGroup {
                         GlassIconButton(
                             title: "Tabs", systemImage: "rectangle.topthird.inset.filled", isOn: model.layout == .tabs,
-                            help: "Tabs: one Pattern at a time (⌘L)"
+                            help: help("Tabs: one Pattern at a time", .switchInspectorLayout)
                         ) { model.layout = .tabs }
                         GlassIconButton(
                             title: "List", systemImage: "list.bullet.indent", isOn: model.layout == .list,
-                            help: "List: every Pattern in one collapsible list (⌘L)"
+                            help: help("List: every Pattern in one collapsible list", .switchInspectorLayout)
                         ) { model.layout = .list }
                     }
                     .accessibilityElement(children: .contain)

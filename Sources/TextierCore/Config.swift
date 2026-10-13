@@ -1,5 +1,5 @@
 /// The ordered Patterns textier detects with, the user's own Grok Definitions,
-/// the global shortcut, the editor command template, how the Panel copies,
+/// the global shortcut, the editor command template, the Inspector's layout,
 /// whether the app is light or dark, and when the Selection Popover forgets its text.
 public struct Config: Sendable, Equatable {
     public var patterns: [Pattern]
@@ -10,8 +10,6 @@ public struct Config: Sendable, Equatable {
     /// The `open-file` command template with `{path}` and `{line}` placeholders;
     /// nil when unset, so the editor is resolved from `$EDITOR` instead.
     public var editorCommand: String?
-    /// What a click on a JSON Match in the Input copies.
-    public var copyJSON: CopyJSON
     /// How the Inspector groups Matches by Pattern.
     public var inspectorLayout: InspectorLayout
     /// Light, dark, or following the system. The JSON Viewer colors with GitHub
@@ -20,20 +18,22 @@ public struct Config: Sendable, Equatable {
     /// Seconds after the Selection Popover closes that it clears its text; 0 keeps
     /// it until the next selection.
     public var clearSelectionAfter: Int
+    /// The app's own shortcuts (the global one is `shortcut`).
+    public var shortcuts: CommandShortcuts
 
     public init(
         patterns: [Pattern], grok: [GrokDefinition] = [], shortcut: Shortcut = .default, editorCommand: String? = nil,
-        copyJSON: CopyJSON = .raw, inspectorLayout: InspectorLayout = .tabs, appearance: AppearanceSetting = .system,
-        clearSelectionAfter: Int = 0
+        inspectorLayout: InspectorLayout = .tabs, appearance: AppearanceSetting = .system,
+        clearSelectionAfter: Int = 0, shortcuts: CommandShortcuts = .default
     ) {
         self.patterns = patterns
         self.grok = grok
         self.shortcut = shortcut
         self.editorCommand = editorCommand
-        self.copyJSON = copyJSON
         self.inspectorLayout = inspectorLayout
         self.appearance = appearance
         self.clearSelectionAfter = clearSelectionAfter
+        self.shortcuts = shortcuts
     }
 
     public static let `default` = Config(patterns: Pattern.shipped)
@@ -48,15 +48,6 @@ public struct Config: Sendable, Equatable {
     public func pattern(of match: Match) -> Pattern? {
         patterns.indices.contains(match.patternIndex) ? patterns[match.patternIndex] : nil
     }
-}
-
-/// The form a click on a JSON Match in the Input copies. The config file names it
-/// by the raw value.
-public enum CopyJSON: String, Sendable, Equatable, CaseIterable {
-    /// The Match's text exactly as logged.
-    case raw
-    /// The JSON beautified.
-    case pretty
 }
 
 /// How the Inspector shows its Pattern groups. The config file names it by the

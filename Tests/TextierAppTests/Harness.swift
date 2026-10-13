@@ -215,10 +215,13 @@ final class AppHarness {
         textView.setSelectedRange(NSRange(location: min(start, end), length: abs(end - start)))
     }
 
-    func mouseEvent(_ type: NSEvent.EventType, at point: NSPoint, clickCount: Int = 1, in window: NSWindow? = nil) -> NSEvent {
+    func mouseEvent(
+        _ type: NSEvent.EventType, at point: NSPoint, clickCount: Int = 1, modifiers: NSEvent.ModifierFlags = [],
+        in window: NSWindow? = nil
+    ) -> NSEvent {
         let window = window ?? panel
         return NSEvent.mouseEvent(
-            with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            with: type, location: point, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clickCount, pressure: 1
         )!
     }
@@ -231,6 +234,12 @@ final class AppHarness {
 
     func click(onText text: String) {
         click(point(inInput: range(of: text)))
+    }
+
+    /// A click with modifiers held, ⌘ (the Match click's default) unless given.
+    func commandClick(onText text: String, modifiers: NSEvent.ModifierFlags = [.command]) {
+        textView.mouseDown(with: mouseEvent(.leftMouseDown, at: point(inInput: range(of: text)), modifiers: modifiers))
+        spin()
     }
 
     /// A double-click: the first click, then the second with a click count of 2.
@@ -249,11 +258,13 @@ final class AppHarness {
 
     // MARK: Keyboard
 
-    func keyEvent(_ characters: String, modifiers: NSEvent.ModifierFlags = [], keyCode: UInt16 = 0) -> NSEvent {
+    /// A key press of `characters`; its key code is the key's (`ShortcutKeys`) unless given.
+    func keyEvent(_ characters: String, modifiers: NSEvent.ModifierFlags = [], keyCode: UInt16? = nil) -> NSEvent {
         NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: panel.windowNumber, context: nil, characters: characters,
-            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+            charactersIgnoringModifiers: characters, isARepeat: false,
+            keyCode: keyCode ?? UInt16(ShortcutKeys.codes[characters.lowercased()] ?? 0)
         )!
     }
 

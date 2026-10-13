@@ -7,11 +7,11 @@ import TextierCore
 /// the entry selected in the Inspector (`inspected`, a nested Match too) take the
 /// strong tint; the selected one also gets a ring in the solid color.
 ///
-/// With Highlighting on, the pointer over a Match is the pointing hand; a click
-/// without drag on a Match opens it in the Inspector as the mouse goes up and still
-/// places the cursor; a drag selects text as usual; a double-click on a Match
-/// copies it. Text outside Matches, and everything while Highlighting is off,
-/// behaves like any text view.
+/// A click is a text view's click everywhere, Matches included: it places the
+/// cursor, a drag selects, a double-click selects a word. With Highlighting on and
+/// the Match click's modifiers held (⌘ by default, the Config's
+/// `shortcuts.matchClick`), the pointer over a Match is the pointing hand, its pill
+/// deepens, and a click opens it in the Inspector.
 @MainActor
 final class InputTextView: OwnCopyTextView {
     var matches: [Match] = [] {
@@ -31,6 +31,10 @@ final class InputTextView: OwnCopyTextView {
     var highlighting = true {
         didSet {
             guard highlighting != oldValue else { return }
+            if !highlighting {
+                isActingOnMatches = false
+                hover(nil)
+            }
             highlight()
             window?.invalidateCursorRects(for: self)
         }
@@ -81,10 +85,8 @@ final class InputTextView: OwnCopyTextView {
 
     /// Each range whose text is colored again; the app tests watch it.
     var onRecolor: (NSRange) -> Void = { _ in }
-    /// A click without drag on a Match.
+    /// A click on a Match with the Match click's modifiers held.
     var onClick: (Match) -> Void = { _ in }
-    /// A double-click on a Match.
-    var onDoubleClick: (Match) -> Void = { _ in }
     /// Esc, when something outside the text view handles it (the Selection
     /// Popover closing); nil leaves it to NSTextView.
     var onCancel: (() -> Void)?
@@ -135,17 +137,38 @@ final class InputTextView: OwnCopyTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard highlighting, let match = match(at: convert(event.locationInWindow, from: nil)) else {
+        updateModifiers(event.modifierFlags)
+        guard isActingOnMatches, event.clickCount == 1,
+              let match = match(at: convert(event.locationInWindow, from: nil))
+        else {
+            // NSTextView tracks the mouse until it goes up: a click places the cursor, a drag selects.
             track(event)
             return
         }
-        if event.clickCount == 2 {
-            onDoubleClick(match)
-            return
+        onClick(match)
+    }
+
+    /// The Match click's modifiers are held (and Highlighting is on): the pointer
+    /// over a Match shows it can be clicked.
+    private var isActingOnMatches = false
+
+    /// The modifiers held changed: the pointing hand and the hovered pill follow.
+    func updateModifiers(_ flags: NSEvent.ModifierFlags) {
+        let acting = highlighting && Shortcut.matches(AppConfig.current.shortcuts.matchClick, flags)
+        guard acting != isActingOnMatches else { return }
+        isActingOnMatches = acting
+        window?.invalidateCursorRects(for: self)
+        if acting, let window {
+            let index = characterIndex(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
+            hover(index.flatMap(match(containing:))?.range)
+        } else {
+            hover(nil)
         }
-        // NSTextView tracks the mouse until it goes up: a click places the cursor, a drag selects.
-        track(event)
-        if event.clickCount == 1, selectedRange().length == 0 { onClick(match) }
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        updateModifiers(event.modifierFlags)
     }
 
     private func track(_ event: NSEvent) {
@@ -169,7 +192,8 @@ final class InputTextView: OwnCopyTextView {
     /// setting it here too fought the text view's I-beam rect, so it flickered.
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        let index = highlighting ? characterIndex(at: convert(event.locationInWindow, from: nil)) : nil
+        updateModifiers(event.modifierFlags)
+        let index = isActingOnMatches ? characterIndex(at: convert(event.locationInWindow, from: nil)) : nil
         // Still over the same pill: nothing to look up.
         if let index, let hovered, NSLocationInRange(index, hovered) { return }
         hover(index.flatMap(match(containing:))?.range)
@@ -192,9 +216,10 @@ final class InputTextView: OwnCopyTextView {
         for rect in pointingHandRects { addCursorRect(rect, cursor: .pointingHand) }
     }
 
-    /// The visible pills' pieces, in this view's coordinates; none with Highlighting off.
+    /// The visible pills' pieces, in this view's coordinates, while the Match
+    /// click's modifiers are held; none otherwise, or with Highlighting off.
     var pointingHandRects: [NSRect] {
-        guard highlighting, let pillLayoutManager, let textContainer else { return [] }
+        guard isActingOnMatches, let pillLayoutManager, let textContainer else { return [] }
         let visible = visibleRect
         let origin = textContainerOrigin
         let shown = pillLayoutManager.glyphRange(
@@ -227,7 +252,7 @@ final class InputTextView: OwnCopyTextView {
     }
 
     private func isOverMatch(_ event: NSEvent) -> Bool {
-        highlighting && match(at: convert(event.locationInWindow, from: nil)) != nil
+        isActingOnMatches && match(at: convert(event.locationInWindow, from: nil)) != nil
     }
 
     /// Lays out the pills and colors the Matches' text, or clears both with

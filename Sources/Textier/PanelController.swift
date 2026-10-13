@@ -122,7 +122,6 @@ final class PanelController: NSObject, NSTextViewDelegate, NSSplitViewDelegate {
     private func makeInputScrollView() -> NSScrollView {
         textView.delegate = self
         textView.onClick = { [weak self] match in self?.open(match) }
-        textView.onDoubleClick = { [weak self] match in self?.copy(match) }
 
         let scrollView = FadingScrollView()
         scrollView.hasVerticalScroller = true
@@ -138,21 +137,10 @@ final class PanelController: NSObject, NSTextViewDelegate, NSSplitViewDelegate {
 
     /// A click on a Match: selects it in the Inspector, leaving the cursor where the
     /// click put it rather than selecting the Match's text, so a click still edits there.
+    /// A ⌘-click on a Match: selected in the Inspector, its text selected in the
+    /// Input (so ⌘C copies it).
     private func open(_ match: Match) {
-        let cursor = textView.selectedRange()
         model.select(match)
-        textView.setSelectedRange(cursor)
-    }
-
-    /// A double-click on a Match copies it: JSON raw or beautified per `copyJSON`,
-    /// anything else raw.
-    private func copy(_ match: Match) {
-        if AppConfig.current.copyJSON == .pretty, AppConfig.current.pattern(of: match)?.kind == .builtin(.json),
-           let json = JSONValue.container(from: match.text) {
-            copyToPasteboard(json.prettyPrinted)
-        } else {
-            copyToPasteboard(match.text)
-        }
     }
 
     // MARK: Inspector
@@ -282,6 +270,10 @@ final class PanelController: NSObject, NSTextViewDelegate, NSSplitViewDelegate {
             guard let self else { return }
             self.panel.makeFirstResponder(self.textView)
         }
+        model.onGoToLine = { [weak self] in
+            guard let self else { return }
+            GoToLineBar.show(for: self.textView)
+        }
         model.onFocusList = { [weak self] in
             guard let self, let list = self.entryList else { return }
             self.panel.makeFirstResponder(list)
@@ -322,9 +314,10 @@ final class PanelController: NSObject, NSTextViewDelegate, NSSplitViewDelegate {
 
 /// The Panel's window, textier's main window. Hides on Esc, from the Input as from
 /// anywhere else (in full screen, Esc leaves full screen as usual), and handles the
-/// Panel's shortcuts: ⌘E toggles Highlighting, ⌘L switches the Inspector between
-/// tabs and one list, ⌘1–⌘9 switch Inspector tabs, ⌘⇧P pops the selected entry
-/// out, ⌘, opens Settings. Caps Lock and the keypad don't change a shortcut.
+/// Panel's shortcuts, as the Config's `shortcuts` set them: Toggle Highlighting
+/// (⌘E), Switch Inspector Layout (⌘L), Pop Out (⌘⇧P), Go to Line (⌘G), Toggle
+/// Wrap Lines, Settings (⌘,), Quit (⌘Q), and the tab modifiers with 1–9 (⌘1–⌘9).
+/// Caps Lock and the keypad don't change a shortcut.
 private final class PanelWindow: NSWindow {
     weak var model: PanelModel?
 
@@ -337,23 +330,21 @@ private final class PanelWindow: NSWindow {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        guard let model, let key = event.charactersIgnoringModifiers?.lowercased() else {
-            return super.performKeyEquivalent(with: event)
+        guard let model, let shortcut = Shortcut(event: event) else { return super.performKeyEquivalent(with: event) }
+        let shortcuts = AppConfig.current.shortcuts
+        if shortcut.modifiers == shortcuts.selectTab, shortcut.key.count == 1, let number = Int(shortcut.key),
+           (1...9).contains(number) {
+            return model.selectTab(number: number) || super.performKeyEquivalent(with: event)
         }
-        switch (flags, key) {
-        case ([.command], "e"):
-            model.highlighting.toggle()
-        case ([.command], "l"):
-            model.layout = model.layout == .tabs ? .list : .tabs
-        case ([.command, .shift], "p"):
-            model.popOut()
-        case ([.command], ","):
-            SettingsWindowController.show()
-        case ([.command], _) where key.count == 1 && ("1"..."9").contains(key) && model.selectTab(number: Int(key)!):
-            break
-        default:
-            return super.performKeyEquivalent(with: event)
+        guard let command = shortcuts.command(for: shortcut) else { return super.performKeyEquivalent(with: event) }
+        switch command {
+        case .toggleHighlighting: model.highlighting.toggle()
+        case .switchInspectorLayout: model.layout = model.layout == .tabs ? .list : .tabs
+        case .popOut: model.popOut()
+        case .goToLine: model.goToLine()
+        case .toggleWrapLines: model.wrapsLines.toggle()
+        case .settings: SettingsWindowController.show()
+        case .quit: NSApp.terminate(nil)
         }
         return true
     }

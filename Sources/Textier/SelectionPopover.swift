@@ -101,8 +101,8 @@ final class SelectionPopoverModel {
             preview.scrollRangeToVisible(entry.range)
         }
         inspector.onHighlightingChange = { [weak self] in self?.preview.highlighting = $0 }
-        // A click on a pill selects it in the list (shown, if a filter hid it), the
-        // keyboard staying in the text for editing; a double-click copies it.
+        // A ⌘-click on a pill selects it in the list (shown, if a filter hid it), the
+        // keyboard staying in the text for editing.
         preview.onClick = { [weak self] match in
             guard let self else { return }
             inspector.select(match)
@@ -110,7 +110,6 @@ final class SelectionPopoverModel {
             // An open card follows; with none open, the pill only selects.
             if openRow != nil { openSelection() }
         }
-        preview.onDoubleClick = { copyToPasteboard($0.text) }
         // Esc closes the popover, even with the preview's text selected.
         preview.onCancel = { [weak self] in self?.onClose() }
         edits = NotificationObservation(NSText.didChangeNotification, object: preview) { [weak self] in
@@ -441,17 +440,23 @@ struct SelectionPopoverView: View {
         .onExitCommand(perform: close)
     }
 
-    /// ⌘, opens Settings (the popover closing behind it) and ⌘Q quits, as from the
-    /// menu bar icon's menu; the buttons are only there for their shortcuts.
+    /// Settings' shortcut (⌘,) opens it, the popover closing behind it, and Quit's
+    /// (⌘Q) quits, as from the menu bar icon's menu; the buttons are only there for
+    /// their shortcuts, as the Config sets them.
     private var shortcuts: some View {
-        ZStack {
-            Button("Settings…") {
-                SettingsWindowController.show()
-                close()
+        let shortcuts = AppConfig.store.config.shortcuts
+        return ZStack {
+            if let settings = shortcuts[.settings]?.swiftUI {
+                Button("Settings…") {
+                    SettingsWindowController.show()
+                    close()
+                }
+                .keyboardShortcut(settings)
             }
-            .keyboardShortcut(",")
-            Button("Quit") { NSApp.terminate(nil) }
-                .keyboardShortcut("q")
+            if let quit = shortcuts[.quit]?.swiftUI {
+                Button("Quit") { NSApp.terminate(nil) }
+                    .keyboardShortcut(quit)
+            }
         }
         .opacity(0)
         .allowsHitTesting(false)
@@ -1139,8 +1144,11 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
     func menu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        func add(_ title: String, _ action: Selector, key: String = "", enabled: Bool = true) {
-            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+        let shortcuts = AppConfig.current.shortcuts
+        func add(_ title: String, _ action: Selector, shortcut: Shortcut? = nil, enabled: Bool = true) {
+            let equivalent = shortcut?.keyEquivalent
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: equivalent?.key ?? "")
+            item.keyEquivalentModifierMask = equivalent?.modifiers ?? []
             item.target = self
             item.isEnabled = enabled
         }
@@ -1148,10 +1156,10 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
         add("Open Panel", #selector(openPanelFromMenu))
         add("Clear Selection", #selector(clearSelection), enabled: model.canClear)
         menu.addItem(.separator())
-        add("Settings…", #selector(showSettings), key: ",")
+        add("Settings…", #selector(showSettings), shortcut: shortcuts[.settings])
         add("Open Config File", #selector(openConfigFile))
         menu.addItem(.separator())
-        add("Quit", #selector(quit), key: "q")
+        add("Quit", #selector(quit), shortcut: shortcuts[.quit])
         return menu
     }
 

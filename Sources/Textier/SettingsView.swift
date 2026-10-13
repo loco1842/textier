@@ -29,6 +29,7 @@ struct SettingsView: View {
                         SectionWarnings(model: model)
                         switch model.section {
                         case .general: GeneralSettings(model: model)
+                        case .shortcuts: ShortcutsSettings(model: model)
                         case .appearance: AppearanceSettings(model: model)
                         case .grokDefinitions: GrokSettings(model: model)
                         case .patterns: EmptyView()
@@ -76,14 +77,6 @@ private struct GeneralSettings: View {
 
     var body: some View {
         Section {
-            LabeledContent("Shortcut") {
-                ShortcutRecorder(shortcut: model.config.shortcut, draft: model.draft(.shortcut)) {
-                    model.recordShortcut(modifiers: $0, key: $1)
-                }
-            }
-            if let draft = model.draft(.shortcut) {
-                DraftNote(draft: draft, fileValue: model.config.shortcut.symbols) { model.discardDraft(.shortcut) }
-            }
             Picker("Clear the selection", selection: Binding(
                 get: { model.config.clearSelectionAfter }, set: { model.setClearSelectionAfter($0) }
             )) {
@@ -92,7 +85,7 @@ private struct GeneralSettings: View {
                 }
             }
         } footer: {
-            Text("Opens the selected text from any app in the menu bar popover. It keeps the selection for the menu bar icon until the next one, or clears it this long after it closes.")
+            Text("The menu bar popover keeps the selection for its icon until the next one, or clears it this long after it closes.")
                 .foregroundStyle(.secondary)
         }
         Section {
@@ -113,15 +106,90 @@ private struct GeneralSettings: View {
                 .foregroundStyle(.secondary)
         }
         Section {
-            Picker("A click on JSON copies", selection: Binding(get: { model.config.copyJSON }, set: { model.setCopyJSON($0) })) {
-                Text("Raw").tag(CopyJSON.raw)
-                Text("Beautified").tag(CopyJSON.pretty)
-            }
             Picker("Inspector layout", selection: Binding(
                 get: { model.config.inspectorLayout }, set: { model.setInspectorLayout($0) }
             )) {
                 Text("Tabs").tag(InspectorLayout.tabs)
                 Text("List").tag(InspectorLayout.list)
+            }
+        }
+    }
+}
+
+// MARK: Shortcuts
+
+/// The global shortcut, then each command's in the app with its own recorder (and
+/// buttons for none and its default), then the modifiers that select tabs and
+/// Matches.
+private struct ShortcutsSettings: View {
+    let model: SettingsModel
+
+    var body: some View {
+        Section {
+            LabeledContent("Open the Selection Popover") {
+                ShortcutRecorder(shortcut: model.config.shortcut, draft: model.draft(.shortcut)) {
+                    model.recordShortcut(modifiers: $0, key: $1)
+                }
+            }
+            if let draft = model.draft(.shortcut) {
+                DraftNote(draft: draft, fileValue: model.config.shortcut.symbols) { model.discardDraft(.shortcut) }
+            }
+        } footer: {
+            Text("Works in any app: opens the selected text in the menu bar popover.")
+                .foregroundStyle(.secondary)
+        }
+        Section("In textier") {
+            ForEach(ShortcutCommand.allCases, id: \.self) { command in
+                commandRow(command)
+            }
+        }
+        Section {
+            Picker("Select tab 1–9", selection: Binding(
+                get: { model.config.shortcuts.selectTab }, set: { model.setSelectTabModifiers($0) }
+            )) {
+                ForEach(model.modifierChoices(including: model.config.shortcuts.selectTab), id: \.rawValue) { modifiers in
+                    Text(Shortcut.symbols(of: modifiers) + "1–9").tag(modifiers)
+                }
+            }
+            Picker("Select a Match in the text", selection: Binding(
+                get: { model.config.shortcuts.matchClick }, set: { model.setMatchClickModifiers($0) }
+            )) {
+                ForEach(model.modifierChoices(including: model.config.shortcuts.matchClick), id: \.rawValue) { modifiers in
+                    Text(Shortcut.symbols(of: modifiers) + "-click").tag(modifiers)
+                }
+            }
+        } footer: {
+            HStack {
+                Text("A plain click in the text places the cursor.")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Restore Defaults") { model.restoreDefaultShortcuts() }
+            }
+        }
+    }
+
+    @ViewBuilder private func commandRow(_ command: ShortcutCommand) -> some View {
+        let shortcut = model.config.shortcuts[command]
+        LabeledContent(command.title) {
+            HStack(spacing: 4) {
+                ShortcutRecorder(shortcut: shortcut, draft: model.draft(.commandShortcut(command))) {
+                    model.recordShortcut(for: command, modifiers: $0, key: $1)
+                }
+                Button { model.clearShortcut(of: command) } label: { Image(systemName: "xmark.circle") }
+                    .buttonStyle(.borderless)
+                    .disabled(shortcut == nil)
+                    .help("No shortcut")
+                    .accessibilityLabel("No shortcut for \(command.title)")
+                Button { model.resetShortcut(of: command) } label: { Image(systemName: "arrow.counterclockwise") }
+                    .buttonStyle(.borderless)
+                    .disabled(shortcut == command.defaultShortcut)
+                    .help("Back to \(command.defaultShortcut?.symbols ?? "none")")
+                    .accessibilityLabel("Default shortcut for \(command.title)")
+            }
+        }
+        if let draft = model.draft(.commandShortcut(command)) {
+            DraftNote(draft: draft, fileValue: shortcut?.symbols ?? "none") {
+                model.discardDraft(.commandShortcut(command))
             }
         }
     }
@@ -153,7 +221,8 @@ struct DraftNote: View {
 /// shortcut. Esc cancels, and so does the window losing the keyboard, so a key
 /// pressed in the Panel or another app is never taken for it.
 private struct ShortcutRecorder: View {
-    let shortcut: Shortcut
+    /// The shortcut as the file has it; nil for none.
+    let shortcut: Shortcut?
     let draft: SettingsModel.Draft?
     let record: (Shortcut.Modifiers, String) -> Void
     @State private var monitor: Any?
@@ -163,7 +232,7 @@ private struct ShortcutRecorder: View {
 
     var body: some View {
         Button(action: { monitor == nil ? start() : stop() }) {
-            Text(monitor != nil ? "Type the shortcut…" : draft?.text ?? shortcut.symbols)
+            Text(monitor != nil ? "Type the shortcut…" : draft?.text ?? shortcut?.symbols ?? "None")
                 .frame(minWidth: 120)
         }
         .help("Click, then press the shortcut")
@@ -203,43 +272,24 @@ private struct ShortcutRecorder: View {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         defer { stop() }
         if Int(event.keyCode) == kVK_Escape, flags.isDisjoint(with: [.control, .option, .command, .shift]) { return }
-        var modifiers: Shortcut.Modifiers = []
-        if flags.contains(.control) { modifiers.insert(.control) }
-        if flags.contains(.option) { modifiers.insert(.option) }
-        if flags.contains(.shift) { modifiers.insert(.shift) }
-        if flags.contains(.command) { modifiers.insert(.command) }
-        record(modifiers, Self.keyName(event))
+        record(ShortcutKeys.modifiers(flags), Self.keyName(event))
     }
 
     /// The `Shortcut` key name for the physical key, or what the key types when a
     /// Shortcut can't use it.
-    private static func keyName(_ event: NSEvent) -> String {
-        if let name = keyNames[Int(event.keyCode)] { return name }
+    static func keyName(_ event: NSEvent) -> String {
+        if let name = ShortcutKeys.keyName(event) { return name }
+        if let symbol = otherKeys[Int(event.keyCode)] { return symbol }
         let typed = event.charactersIgnoringModifiers?.lowercased() ?? ""
         let isFunctionKey = typed.unicodeScalars.contains { (0xF700...0xF8FF).contains($0.value) }
         return typed.isEmpty || isFunctionKey ? "key \(event.keyCode)" : typed
     }
 
-    /// The keys a Shortcut accepts (`Shortcut.keys`), by virtual key code, and a few
-    /// common ones it doesn't, by symbol.
-    private static let keyNames: [Int: String] = {
-        var names: [Int: String] = [
-            kVK_ANSI_A: "a", kVK_ANSI_B: "b", kVK_ANSI_C: "c", kVK_ANSI_D: "d", kVK_ANSI_E: "e",
-            kVK_ANSI_F: "f", kVK_ANSI_G: "g", kVK_ANSI_H: "h", kVK_ANSI_I: "i", kVK_ANSI_J: "j",
-            kVK_ANSI_K: "k", kVK_ANSI_L: "l", kVK_ANSI_M: "m", kVK_ANSI_N: "n", kVK_ANSI_O: "o",
-            kVK_ANSI_P: "p", kVK_ANSI_Q: "q", kVK_ANSI_R: "r", kVK_ANSI_S: "s", kVK_ANSI_T: "t",
-            kVK_ANSI_U: "u", kVK_ANSI_V: "v", kVK_ANSI_W: "w", kVK_ANSI_X: "x", kVK_ANSI_Y: "y",
-            kVK_ANSI_Z: "z",
-            kVK_ANSI_0: "0", kVK_ANSI_1: "1", kVK_ANSI_2: "2", kVK_ANSI_3: "3", kVK_ANSI_4: "4",
-            kVK_ANSI_5: "5", kVK_ANSI_6: "6", kVK_ANSI_7: "7", kVK_ANSI_8: "8", kVK_ANSI_9: "9",
-            kVK_Space: "space",
-            kVK_Return: "↩", kVK_Tab: "⇥", kVK_Delete: "⌫", kVK_Escape: "⎋",
-            kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
-        ]
-        let functionKeys = [kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8, kVK_F9, kVK_F10, kVK_F11, kVK_F12]
-        for (index, code) in functionKeys.enumerated() { names[code] = "f\(index + 1)" }
-        return names
-    }()
+    /// A few common keys a Shortcut doesn't take, by symbol.
+    private static let otherKeys: [Int: String] = [
+        kVK_Return: "↩", kVK_Tab: "⇥", kVK_Delete: "⌫", kVK_Escape: "⎋",
+        kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
+    ]
 }
 
 // MARK: Appearance

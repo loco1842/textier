@@ -78,6 +78,9 @@ struct EntryOrderTests {
         let elapsed = clock.measure { sorted = orders.indices(in: .ascending) }
         #expect(sorted.count == 100_000)
         #expect(orders.entries[sorted[0]].text == "ORD-0")
-        #expect(elapsed < .seconds(2))
+        // Against sorting the same texts plainly, timed alongside, so a busy machine
+        // slows both; comparing character by character was many times slower.
+        let plain = clock.measure { _ = orders.entries.map(\.text).sorted(by: <) }
+        #expect(elapsed < plain * 8 + .milliseconds(200))
     }
 }

@@ -224,7 +224,10 @@ private struct TabBar: View {
                     ) {
                         model.selectTab(tab.id)
                     }
-                    .help((number < 9 ? "\(tab.title) (⌘\(number + 1))" : tab.title) + (tab.id == .plainText ? "" : " — drag to move"))
+                    .help(
+                        (number < 9 ? "\(tab.title) (\(Shortcut.symbols(of: AppConfig.store.config.shortcuts.selectTab))\(number + 1))" : tab.title)
+                            + (tab.id == .plainText ? "" : " — drag to move")
+                    )
                     if tab.id == .plainText {
                         pill
                     } else {

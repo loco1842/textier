@@ -15,13 +15,14 @@ import TextierCore
 final class SettingsModel {
     /// The parts of Settings, in sidebar order.
     enum Section: String, CaseIterable, Identifiable {
-        case general, appearance, patterns, grokDefinitions
+        case general, shortcuts, appearance, patterns, grokDefinitions
 
         var id: Self { self }
 
         var title: String {
             switch self {
             case .general: "General"
+            case .shortcuts: "Shortcuts"
             case .appearance: "Appearance"
             case .patterns: "Patterns"
             case .grokDefinitions: "Grok Definitions"
@@ -31,6 +32,7 @@ final class SettingsModel {
         var systemImage: String {
             switch self {
             case .general: "gearshape"
+            case .shortcuts: "command"
             case .appearance: "paintpalette"
             case .patterns: "text.magnifyingglass"
             case .grokDefinitions: "books.vertical"
@@ -41,6 +43,8 @@ final class SettingsModel {
     /// A value Settings can hold a draft of.
     enum Setting: Hashable {
         case shortcut
+        /// A command's shortcut in the app.
+        case commandShortcut(ShortcutCommand)
         /// The name or regex of the Pattern at an index in the Config.
         case patternName(Int)
         case patternRegex(Int)
@@ -117,12 +121,16 @@ final class SettingsModel {
     /// otherwise kept as a draft saying why not.
     func recordShortcut(modifiers: Shortcut.Modifiers, key: String) {
         if let shortcut = Shortcut(modifiers: modifiers, key: key) {
-            setShortcut(shortcut)
+            if let command = config.shortcuts.command(for: shortcut) {
+                keepDraft(.shortcut, text: shortcut.symbols, problem: "\(shortcut.symbols) is already \(command.title)")
+            } else {
+                setShortcut(shortcut)
+            }
             return
         }
         let problem = Shortcut.keys.contains(key)
             ? "Add ⌃, ⌥ or ⌘, so the shortcut doesn't take over typing"
-            : "A shortcut's key is a letter, a digit, F1–F12 or Space"
+            : "A shortcut's key is a letter, a digit, punctuation, F1–F12 or Space"
         keepDraft(.shortcut, text: Shortcut.symbols(modifiers: modifiers, key: key), problem: problem)
     }
 
@@ -139,10 +147,6 @@ final class SettingsModel {
     /// command that won't run shows the editor warning in General.
     func testEditorCommand() {
         openConfigFile()
-    }
-
-    func setCopyJSON(_ copyJSON: CopyJSON) {
-        apply { $0.copyJSON = copyJSON }
     }
 
     func setInspectorLayout(_ layout: InspectorLayout) {
@@ -170,6 +174,56 @@ final class SettingsModel {
         return "After " + counted(seconds, "second")
     }
 
+    // MARK: Shortcuts
+
+    /// A key press from a command's recorder: written when it makes a Shortcut no
+    /// one else has, otherwise kept as a draft saying why not.
+    func recordShortcut(for command: ShortcutCommand, modifiers: Shortcut.Modifiers, key: String) {
+        let setting = Setting.commandShortcut(command)
+        guard let shortcut = Shortcut(modifiers: modifiers, key: key) else {
+            let problem = Shortcut.keys.contains(key)
+                ? "Add ⌃, ⌥ or ⌘, so the shortcut doesn't take over typing"
+                : "A shortcut's key is a letter, a digit, punctuation, F1–F12 or Space"
+            return keepDraft(setting, text: Shortcut.symbols(modifiers: modifiers, key: key), problem: problem)
+        }
+        if let problem = config.shortcuts.problem(with: shortcut, for: command, global: config.shortcut) {
+            return keepDraft(setting, text: shortcut.symbols, problem: problem)
+        }
+        apply(clearing: setting) { $0.shortcuts[command] = shortcut }
+    }
+
+    /// Leaves `command` without a shortcut.
+    func clearShortcut(of command: ShortcutCommand) {
+        apply(clearing: .commandShortcut(command)) { $0.shortcuts[command] = nil }
+    }
+
+    /// Puts back `command`'s default, unless another command has it now.
+    func resetShortcut(of command: ShortcutCommand) {
+        guard let shortcut = command.defaultShortcut else { return clearShortcut(of: command) }
+        recordShortcut(for: command, modifiers: shortcut.modifiers, key: shortcut.key)
+    }
+
+    /// Every command's default shortcut and modifiers again; the global one stays.
+    func restoreDefaultShortcuts() {
+        for command in ShortcutCommand.allCases { drafts[.commandShortcut(command)] = nil }
+        apply { $0.shortcuts = .default }
+    }
+
+    func setSelectTabModifiers(_ modifiers: Shortcut.Modifiers) {
+        apply { $0.shortcuts.selectTab = modifiers }
+    }
+
+    func setMatchClickModifiers(_ modifiers: Shortcut.Modifiers) {
+        apply { $0.shortcuts.matchClick = modifiers }
+    }
+
+    /// The modifiers Settings offers for the tab digits and the Match click, with
+    /// the file's own when it's another.
+    func modifierChoices(including current: Shortcut.Modifiers) -> [Shortcut.Modifiers] {
+        let choices: [Shortcut.Modifiers] = [[.command], [.option], [.control], [.command, .option], [.control, .option], [.command, .shift]]
+        return choices.contains(current) ? choices : choices + [current]
+    }
+
     // MARK: Appearance
 
     /// System, Light or Dark; the app follows once the file is written.
@@ -188,7 +242,8 @@ final class SettingsModel {
     /// The config, shortcut and editor warnings about `section`.
     func warnings(in section: Section) -> [ConfigWarning] {
         var bySection: [(Section, ConfigWarning)] = store.loadWarnings.map { (Self.section(forLoadWarning: $0.message), $0) }
-        bySection += [store.shortcutWarning, store.editorWarning].compactMap { $0 }.map { (.general, $0) }
+        bySection += [store.shortcutWarning].compactMap { $0 }.map { (.shortcuts, $0) }
+        bySection += [store.editorWarning].compactMap { $0 }.map { (.general, $0) }
         return bySection.filter { $0.0 == section }.map(\.1)
     }
 
@@ -197,6 +252,7 @@ final class SettingsModel {
         if message.hasPrefix("Pattern ") { return .patterns }
         if message.hasPrefix("Grok Definition ") || message.hasPrefix(#""grok""#) { return .grokDefinitions }
         if message.hasPrefix(#""appearance""#) || message.hasPrefix(#""theme""#) { return .appearance }
+        if message.hasPrefix("Shortcut") || message.hasPrefix(#""shortcuts""#) { return .shortcuts }
         return .general
     }
 
@@ -270,15 +326,11 @@ final class SettingsModel {
 
 extension Shortcut {
     /// How macOS menus write it: ⌃⌥T.
-    var symbols: String {
-        Self.symbols(modifiers: modifiers, key: key)
-    }
+    var symbols: String { symbolText }
 
     /// The symbols for a key press, whether or not it makes a Shortcut.
     static func symbols(modifiers: Modifiers, key: String) -> String {
-        let names: [(Modifiers, String)] = [(.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
-        let keyName = key == "space" ? "Space" : key.uppercased()
-        return names.filter { modifiers.contains($0.0) }.map(\.1).joined() + keyName
+        symbols(of: modifiers) + (key == "space" ? "Space" : key.uppercased())
     }
 }
 

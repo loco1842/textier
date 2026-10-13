@@ -106,6 +106,8 @@ final class PanelModel {
     @ObservationIgnored var onFocusInput: () -> Void = {}
     /// Called when Tab or Shift-Tab in the Input asks for the Inspector's list.
     @ObservationIgnored var onFocusList: () -> Void = {}
+    /// Called for Go to Line.
+    @ObservationIgnored var onGoToLine: () -> Void = {}
 
     // MARK: Inspecting
 
@@ -378,6 +380,11 @@ final class PanelModel {
 
     func focusInput() {
         onFocusInput()
+    }
+
+    /// Go to Line (⌘G): asks for a line of the Input to move the cursor to.
+    func goToLine() {
+        onGoToLine()
     }
 
     func setWarnings(_ warnings: [String]) {

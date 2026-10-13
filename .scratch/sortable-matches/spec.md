@@ -1,6 +1,6 @@
 # Sortable Matches
 
-Status: ready-for-agent
+Status: done (awaiting manual pass)
 
 Each Pattern's entries can be listed by position (as today) or sorted by value.
 

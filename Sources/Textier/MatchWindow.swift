@@ -32,13 +32,14 @@ final class MatchWindowController: NSObject, NSWindowDelegate {
 
     private init(model: MatchWindowModel) {
         self.model = model
-        window = NSWindow(
+        window = KeyEquivalentWindow(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         super.init()
+        (window as? KeyEquivalentWindow)?.onKeyEquivalent = { [weak self] in self?.handle($0) ?? false }
         // The title stays set for the Window menu and VoiceOver; the header shows it.
         window.title = "textier — \(model.patternName)"
         window.titleVisibility = .hidden
@@ -62,6 +63,35 @@ final class MatchWindowController: NSObject, NSWindowDelegate {
 
     @objc private func configDidReload() {
         model.refresh()
+    }
+
+    /// Go to Line's shortcut (⌘G): the Raw editor's bar, switching to Raw first.
+    private func handle(_ event: NSEvent) -> Bool {
+        guard let shortcut = Shortcut(event: event), shortcut == AppConfig.current.shortcuts[.goToLine] else { return false }
+        if let editor = rawEditor, model.mode == .raw {
+            GoToLineBar.show(for: editor)
+            return true
+        }
+        // Switched to Raw, the editor comes with SwiftUI's next update.
+        model.mode = .raw
+        let timer = Timer(timeInterval: 0.05, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.window.contentView?.layoutSubtreeIfNeeded()
+                if let editor = self.rawEditor { GoToLineBar.show(for: editor) }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return true
+    }
+
+    /// The Raw editor's text view, while Raw shows.
+    var rawEditor: NSTextView? {
+        func find(_ view: NSView) -> NSTextView? {
+            if let text = view as? NSTextView, text.isEditable { return text }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        return window.contentView.flatMap(find)
     }
 
     private func show() {
@@ -496,5 +526,14 @@ private struct TitlePill: View {
         .background(Capsule().fill(Color(color, \.solid)))
         .fixedSize()
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A window that offers its key equivalents to a handler before the usual route.
+final class KeyEquivalentWindow: NSWindow {
+    var onKeyEquivalent: (NSEvent) -> Bool = { _ in false }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        onKeyEquivalent(event) || super.performKeyEquivalent(with: event)
     }
 }

@@ -56,10 +56,11 @@ public struct SkippedEntries: Sendable, Equatable {
 /// {
 ///   "shortcut": "ctrl+option+t",
 ///   "editorCommand": "",
-///   "copyJSON": "raw",
 ///   "inspectorLayout": "tabs",
 ///   "appearance": "system",
 ///   "clearSelectionAfter": 0,
+///   "shortcuts": { "toggleHighlighting": "cmd+e", "goToLine": "cmd+g", "toggleWrapLines": "", …,
+///                  "selectTab": "cmd", "matchClick": "cmd" },
 ///   "patterns": [
 ///     { "name": "json", "builtin": "json", "enabled": true, "actions": ["open", "copy-pretty", "copy"] },
 ///     { "name": "url", "regex": "…", "enabled": true, "actions": ["open-url", "copy"], "color": "#0969da" },
@@ -84,11 +85,16 @@ public struct SkippedEntries: Sendable, Equatable {
 /// isn't a list, which is ignored with a warning. A Preset whose `regex` is
 /// one an earlier textier shipped for it takes the one it ships now.
 /// `shortcut` uses the `Shortcut` string format and defaults to ⌃⌥T; an empty or
-/// missing `editorCommand` means unset. `copyJSON` is a `CopyJSON` raw value, `raw` by default; `inspectorLayout` an
+/// missing `editorCommand` means unset. `inspectorLayout` an
 /// `InspectorLayout` raw value, `tabs` by default; `appearance` an `AppearanceSetting`
 /// raw value, `system` by default. `clearSelectionAfter` is how many seconds after
 /// the Selection Popover closes it clears its text, a whole number; 0 (the
-/// default) keeps it. A `theme` key, which named VS Code theme files
+/// default) keeps it. `shortcuts` holds the app's own shortcuts by `ShortcutCommand`
+/// raw value, each in the `Shortcut` format, `""` for none and a missing one at its
+/// default; `selectTab` and `matchClick` are modifiers alone (`"cmd"`), which with a
+/// digit select a tab and with a click select a Match. A shortcut that doesn't read
+/// keeps its default; one text editing uses, the global shortcut or one a command
+/// before it has is left unassigned; each with a warning. A `theme` key, which named VS Code theme files
 /// once, is ignored with a warning.
 /// `grok` maps the user's own Grok Definition names to regex bodies, each replacing
 /// a bundled definition of the same name; a broken one is skipped with a warning,
@@ -120,10 +126,10 @@ public enum ConfigFile {
         {
           "shortcut": \(quote(config.shortcut.description)),
           "editorCommand": \(quote(config.editorCommand ?? "")),
-          "copyJSON": \(quote(config.copyJSON.rawValue)),
           "inspectorLayout": \(quote(config.inspectorLayout.rawValue)),
           "appearance": \(quote(config.appearance.rawValue)),
           "clearSelectionAfter": \(config.clearSelectionAfter),
+          "shortcuts": \(shortcutsObject(config.shortcuts)),
           "patterns": [
         \(patterns)
           ],
@@ -264,12 +270,12 @@ public enum ConfigFile {
                 warnings.append(ConfigWarning(#""editorCommand" must be a string; ignored"#))
             }
         }
-        if let value = field("copyJSON", in: object) {
-            if case .string(let string) = value, let copyJSON = CopyJSON(rawValue: string) {
-                config.copyJSON = copyJSON
-            } else {
-                warnings.append(ConfigWarning(#""copyJSON" \#(describe(value)) isn't "raw" or "pretty"; using "raw""#))
-            }
+        // A double-click on a JSON Match copied it, raw or beautified; clicks are a
+        // text view's now, and the card's Copy and Copy Beautified do it.
+        if field("copyJSON", in: object) != nil {
+            warnings.append(ConfigWarning(
+                #""copyJSON" is ignored: ⌘-click a Match, then Copy or Copy Beautified"#
+            ))
         }
         if let value = field("inspectorLayout", in: object) {
             if case .string(let string) = value, let layout = InspectorLayout(rawValue: string) {
@@ -296,6 +302,13 @@ public enum ConfigFile {
                 warnings.append(ConfigWarning(
                     #""clearSelectionAfter" \#(describe(value)) isn't a whole number of seconds; keeping the selection"#
                 ))
+            }
+        }
+        if let value = field("shortcuts", in: object) {
+            if case .object(let entries) = value {
+                config.shortcuts = commandShortcuts(from: entries, global: config.shortcut, warnings: &warnings)
+            } else {
+                warnings.append(ConfigWarning(#""shortcuts" \#(describe(value)) isn't an object; using the defaults"#))
             }
         }
         // Custom theme files were read here once; they're not supported for now.
@@ -508,6 +521,61 @@ public enum ConfigFile {
     }
 
     /// The value of `key` among an object's entries; a repeated key's last value wins.
+    /// The `shortcuts` object as the file writes it, every command in order.
+    private static func shortcutsObject(_ shortcuts: CommandShortcuts) -> String {
+        let commands = ShortcutCommand.allCases.map { "\(quote($0.rawValue)): \(quote(shortcuts[$0]?.description ?? ""))" }
+        let modifiers = [
+            "\(quote("selectTab")): \(quote(Shortcut.description(of: shortcuts.selectTab)))",
+            "\(quote("matchClick")): \(quote(Shortcut.description(of: shortcuts.matchClick)))",
+        ]
+        return "{\n" + (commands + modifiers).map { "    " + $0 }.joined(separator: ",\n") + "\n  }"
+    }
+
+    /// The app's shortcuts from the `shortcuts` object: each written one in place
+    /// of its default, `""` for none; what can't be used is warned about.
+    private static func commandShortcuts(
+        from entries: [JSONEntry], global: Shortcut, warnings: inout [ConfigWarning]
+    ) -> CommandShortcuts {
+        var shortcuts = CommandShortcuts.default
+        let commands = Set(ShortcutCommand.allCases.map(\.rawValue))
+        for key in Set(entries.map(\.key)).subtracting(commands).subtracting(["selectTab", "matchClick"]).sorted() {
+            warnings.append(ConfigWarning(#""shortcuts" has no command "\#(key)"; ignored"#))
+        }
+        // Read first, then checked in command order, so the earlier command keeps a shared shortcut.
+        for command in ShortcutCommand.allCases {
+            guard let value = field(command.rawValue, in: entries) else { continue }
+            guard case .string(let string) = value else {
+                warnings.append(ConfigWarning(#"Shortcut "\#(command.rawValue)" \#(describe(value)) isn't a string; using its default"#))
+                continue
+            }
+            if string.isEmpty {
+                shortcuts[command] = nil
+            } else if let shortcut = Shortcut(string) {
+                shortcuts[command] = shortcut
+            } else {
+                warnings.append(ConfigWarning(#"Shortcut "\#(command.rawValue)" \#(describe(value)) isn't like "cmd+g"; using its default"#))
+            }
+        }
+        for (key, keyPath) in [("selectTab", \CommandShortcuts.selectTab), ("matchClick", \CommandShortcuts.matchClick)] {
+            guard let value = field(key, in: entries) else { continue }
+            if case .string(let string) = value, let modifiers = Shortcut.modifiers(string) {
+                shortcuts[keyPath: keyPath] = modifiers
+            } else {
+                warnings.append(ConfigWarning(#"Shortcut "\#(key)" \#(describe(value)) isn't modifiers like "cmd"; using "cmd""#))
+            }
+        }
+        var checked = CommandShortcuts(assigned: [:], selectTab: shortcuts.selectTab, matchClick: shortcuts.matchClick)
+        for command in ShortcutCommand.allCases {
+            guard let shortcut = shortcuts[command] else { continue }
+            if let problem = checked.problem(with: shortcut, for: command, global: global) {
+                warnings.append(ConfigWarning(#"Shortcut "\#(command.rawValue)": \#(problem); left unassigned"#))
+            } else {
+                checked[command] = shortcut
+            }
+        }
+        return checked
+    }
+
     private static func field(_ key: String, in entries: [JSONEntry]) -> JSONValue? {
         entries.last { $0.key == key }?.value
     }

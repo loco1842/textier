@@ -58,7 +58,7 @@ struct ConfigFileTests {
     @Test func defaultEmissionDocumentsEveryPatternShortcutAndEmptyEditorCommand() throws {
         let text = try #require(String(data: ConfigFile.encode(.default), encoding: .utf8))
 
-        #expect(text.contains(#""copyJSON": "raw""#))
+        #expect(!text.contains("copyJSON"))
         #expect(text.contains(#""appearance": "system""#))
         #expect(!text.contains(#""theme""#))
         #expect(text.contains(##""color": "#"##) || text.contains(##""color": { "light""##))
@@ -313,26 +313,13 @@ struct ConfigFileTests {
 
     // MARK: copyJSON
 
-    @Test func copyJSONDefaultsToRaw() throws {
-        #expect(try #require(load(#"{ "patterns": [] }"#).config).copyJSON == .raw)
-    }
-
-    @Test(arguments: [("raw", CopyJSON.raw), ("pretty", .pretty)])
-    func copyJSONLoads(raw: String, expected: CopyJSON) throws {
-        let loaded = load(#"{ "copyJSON": "\#(raw)", "patterns": [] }"#)
-
-        #expect(try #require(loaded.config).copyJSON == expected)
-        #expect(loaded.warnings.isEmpty)
-    }
-
-    @Test(arguments: [#""beautified""#, "true", #""Pretty""#])
-    func anUnknownCopyJSONWarnsAndFallsBackToRaw(value: String) throws {
+    /// What a double-click on JSON copied; clicks are a text view's now.
+    @Test(arguments: [#""pretty""#, #""raw""#, "1"])
+    func copyJSONIsIgnoredWithAWarning(value: String) throws {
         let loaded = load(#"{ "copyJSON": \#(value), "patterns": [] }"#)
-
-        #expect(try #require(loaded.config).copyJSON == .raw)
-        #expect(loaded.warnings.count == 1)
+        #expect(loaded.config != nil)
+        #expect(loaded.warnings.map(\.message) == [#""copyJSON" is ignored: ⌘-click a Match, then Copy or Copy Beautified"#])
         #expect(loaded.warnings.first?.isFatal == false)
-        #expect(loaded.warnings.first?.message.contains("copyJSON") == true)
     }
 
     // MARK: inspectorLayout
@@ -377,7 +364,7 @@ struct ConfigFileTests {
 
         var config = Config.default
         config.appearance = appearance
-        config.copyJSON = .pretty
+        config.clearSelectionAfter = 30
         #expect(ConfigFile.load(ConfigFile.encode(config)) == ConfigLoad(config: config, warnings: []))
     }
 

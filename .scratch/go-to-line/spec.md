@@ -1,6 +1,6 @@
 # Go to Line, and ⌘-click on a Match
 
-Status: ready-for-agent
+Status: done (awaiting manual pass)
 
 ## Go to Line (⌘G)
 

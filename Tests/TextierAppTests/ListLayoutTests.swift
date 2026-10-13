@@ -55,7 +55,7 @@ extension AppTests {
                 app.spin(0.2)
                 #expect(app.listRowCount == 14)
 
-                app.click(onText: "11:17:10")
+                app.commandClick(onText: "11:17:10")
                 app.spin(0.2)
                 #expect(app.selectedTabTitle == "datetime")
                 #expect(!app.model.isCollapsed(.pattern("datetime")))
@@ -135,7 +135,7 @@ extension AppTests {
                 app.shortcut("l")
 
                 var config = Config.default
-                config.copyJSON = .pretty
+                config.clearSelectionAfter = 30
                 try app.writeConfig(String(decoding: ConfigFile.encode(config), as: UTF8.self))
                 #expect(app.model.layout == .list)
 

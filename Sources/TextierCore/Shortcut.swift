@@ -5,10 +5,11 @@ import Foundation
 ///
 /// Modifiers are `ctrl` (or `control`), `option` (or `opt`, `alt`), `shift` and `cmd`
 /// (or `command`); at least one of `ctrl`, `option` or `cmd` is required, so the
-/// shortcut can't swallow ordinary typing. The key is a letter, a digit, `f1`…`f12`
-/// or `space`. Case and spaces around `+` don't matter.
-public struct Shortcut: Sendable, Equatable, CustomStringConvertible {
-    public struct Modifiers: OptionSet, Sendable {
+/// shortcut can't swallow ordinary typing. The key is a letter, a digit, `f1`…`f12`,
+/// `space`, or one of `, . / ; ' [ ] - = \` and the backquote. Case and spaces
+/// around `+` don't matter.
+public struct Shortcut: Sendable, Hashable, CustomStringConvertible {
+    public struct Modifiers: OptionSet, Sendable, Hashable {
         public let rawValue: UInt8
         public init(rawValue: UInt8) { self.rawValue = rawValue }
 
@@ -28,7 +29,11 @@ public struct Shortcut: Sendable, Equatable, CustomStringConvertible {
     /// Every key name a Shortcut accepts.
     public static let keys: Set<String> = Set(
         "abcdefghijklmnopqrstuvwxyz0123456789".map(String.init) + (1...12).map { "f\($0)" } + ["space"]
+            + punctuation
     )
+
+    /// The punctuation keys a Shortcut accepts.
+    public static let punctuation = [",", ".", "/", ";", "'", "[", "]", "-", "=", "\\", "`"]
 
     /// Canonical names in macOS order (⌃⌥⇧⌘); `description` writes these.
     private static let modifierNames: [(Modifiers, String)] = [
@@ -65,5 +70,22 @@ public struct Shortcut: Sendable, Equatable, CustomStringConvertible {
 
     public var description: String {
         (Self.modifierNames.filter { modifiers.contains($0.0) }.map(\.1) + [key]).joined(separator: "+")
+    }
+
+    /// Parses modifiers alone, such as `"cmd"` or `"ctrl+option"`, as the config
+    /// file writes a click's or the tab digits' modifiers; nil without one of
+    /// `ctrl`, `option` or `cmd`, or with a name that isn't a modifier.
+    public static func modifiers(_ string: String) -> Modifiers? {
+        var modifiers: Modifiers = []
+        for name in string.lowercased().split(separator: "+").map({ $0.trimmingCharacters(in: .whitespaces) }) {
+            guard let modifier = modifierAliases[name] else { return nil }
+            modifiers.insert(modifier)
+        }
+        return modifiers.isDisjoint(with: [.control, .option, .command]) ? nil : modifiers
+    }
+
+    /// `modifiers` as the config file writes them: `"cmd"`, `"ctrl+option"`.
+    public static func description(of modifiers: Modifiers) -> String {
+        modifierNames.filter { modifiers.contains($0.0) }.map(\.1).joined(separator: "+")
     }
 }
