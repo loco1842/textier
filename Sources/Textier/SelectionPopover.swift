@@ -24,6 +24,8 @@ final class SelectionPopoverModel {
     @ObservationIgnored var onClose: () -> Void = {}
     /// The selection is too long to inspect here; the Panel takes it.
     private(set) var isTooLarge = false
+    /// The selection is too long for the Panel too (`PanelModel.largestInput`).
+    private(set) var isTooLargeForPanel = false
     /// The most characters (UTF-16) the popover inspects.
     static let largestInspected = 1_000_000
     /// When the shortcut captured the text.
@@ -121,6 +123,7 @@ final class SelectionPopoverModel {
     private func textDidChange() {
         text = preview.string
         isTooLarge = false
+        isTooLargeForPanel = false
         heldText = ""
         inspector.inputDidChange()
         reinspection?.invalidate()
@@ -158,7 +161,9 @@ final class SelectionPopoverModel {
         hasCaptured = true
         self.lacksAccessibility = lacksAccessibility
         selectedAt = now()
-        isTooLarge = (string as NSString).length > Self.largestInspected
+        let length = (string as NSString).length
+        isTooLarge = length > Self.largestInspected
+        isTooLargeForPanel = length > PanelModel.largestInput
         heldText = isTooLarge ? string : ""
         text = isTooLarge ? "" : string
         lineCount = text.isEmpty ? 0 : text.reduce(1) { $1.isNewline ? $0 + 1 : $0 }
@@ -213,6 +218,7 @@ final class SelectionPopoverModel {
         lacksAccessibility = false
         selectedAt = nil
         isTooLarge = false
+        isTooLargeForPanel = false
         heldText = ""
         text = ""
         lineCount = 0
@@ -378,7 +384,9 @@ struct SelectionPopoverView: View {
             if model.isTooLarge {
                 ContentUnavailableView(
                     "Too long to inspect here", systemImage: "doc.text",
-                    description: Text("Open it in the Panel.")
+                    description: Text(model.isTooLargeForPanel
+                        ? "It's over \(PanelModel.megabytes(PanelModel.largestInput)) MB, too large for the Panel too."
+                        : "Open it in the Panel.")
                 )
                 .frame(maxHeight: .infinity)
             } else {
@@ -518,6 +526,7 @@ struct SelectionPopoverView: View {
                 }
             }
             .buttonStyle(.plain)
+            .disabled(model.isTooLargeForPanel)
             .help(hasText
                 ? "Work on the selection in the Panel: edit it, Pop Out its Matches, see their details"
                 : "Open the Panel as you left it")

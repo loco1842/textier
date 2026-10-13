@@ -46,6 +46,26 @@ final class PanelModel {
         }
     }
     private var otherWarnings: [String] = []
+    /// The longest Input the Panel takes, in UTF-16 units (100 MB of ASCII text).
+    /// Text that would make it longer is refused (`refuse(length:)`).
+    nonisolated static let largestInput = 100 * 1_048_576
+    /// Why the last text was refused, until the Input changes again.
+    private(set) var refusal: String?
+
+    /// Says that text which would make the Input `length` long was refused.
+    func refuse(length: Int) {
+        refusal = "Too large for the Panel: \(Self.megabytes(length)) MB, the limit is \(Self.megabytes(Self.largestInput)) MB"
+    }
+
+    func clearRefusal() {
+        if refusal != nil { refusal = nil }
+    }
+
+    /// A length in UTF-16 units as whole MB, rounded up.
+    static func megabytes(_ length: Int) -> Int {
+        (length + 1_048_575) / 1_048_576
+    }
+
     /// Whether a large Input is being inspected in the background (`inspect`).
     private(set) var isInspecting = false
     /// How far that inspection has got, in whole percent, while `isInspecting`.

@@ -57,6 +57,14 @@ private struct PanelHeader: View {
                 }
             }
             Spacer(minLength: 8)
+            if let refusal = model.refusal {
+                Label(refusal, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .transition(.opacity)
+            }
             if model.isInspecting {
                 Text("Inspecting… \(model.inspectionPercent)%")
                     .monospacedDigit()
@@ -77,6 +85,7 @@ private struct PanelHeader: View {
         // Each pass's counts and warnings settle in rather than snap.
         .animation(reduceMotion ? nil : .spring(duration: 0.25), value: model.inspection.showsInspector)
         .animation(reduceMotion ? nil : .spring(duration: 0.25), value: model.isInspecting)
+        .animation(reduceMotion ? nil : .spring(duration: 0.25), value: model.refusal)
         .animation(reduceMotion ? nil : .spring(duration: 0.25), value: model.patternTabs.map(\.entries.count))
         .animation(reduceMotion ? nil : .spring(duration: 0.25), value: model.warnings)
         .padding(.leading, max(11, leadingInset))

@@ -292,6 +292,48 @@ extension AppTests {
                 #expect(app.inspection.matches.map(\.text) == [url])
             }
         }
+
+
+        @Test func textOver100MBIsRefusedAndTheInputStaysAsItWas() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                app.capture("see https://x.test")
+                let huge = String(repeating: "a", count: PanelModel.largestInput + 1)
+
+                // A capture (Open in Panel, the shortcut's fallback).
+                app.controller.show(input: huge)
+                #expect(app.textView.string == "see https://x.test")
+                #expect(app.model.refusal == "Too large for the Panel: 101 MB, the limit is 100 MB")
+
+                // A paste, through the text view.
+                app.capture("see https://x.test")
+                #expect(app.model.refusal == nil)
+                app.textView.setSelectedRange(NSRange(location: 0, length: 0))
+                app.textView.insertText(huge, replacementRange: NSRange(location: 0, length: 0))
+                #expect(app.textView.string == "see https://x.test")
+                #expect(app.model.refusal != nil)
+
+                // Text that fits clears the note.
+                app.type("x", at: 0)
+                #expect(app.model.refusal == nil)
+                #expect(app.textView.string == "xsee https://x.test")
+            }
+        }
+
+        @Test func aSelectionOver100MBIsntOfferedToThePanel() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let popover = SelectionPopoverModel()
+                popover.show(selection: String(repeating: "a", count: SelectionPopoverModel.largestInspected + 1))
+                #expect(popover.isTooLarge && !popover.isTooLargeForPanel)
+                popover.show(selection: String(repeating: "a", count: PanelModel.largestInput + 1))
+                #expect(popover.isTooLargeForPanel)
+                popover.clear()
+                #expect(!popover.isTooLargeForPanel)
+            }
+        }
     }
 }
 

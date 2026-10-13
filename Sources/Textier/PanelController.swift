@@ -39,8 +39,17 @@ final class PanelController: NSObject, NSTextViewDelegate, NSSplitViewDelegate {
     }
 
     /// Replaces the Input with `input`, inspects it at once, turns Highlighting on
-    /// and shows the Panel.
+    /// and shows the Panel. Text over `PanelModel.largestInput` is refused: the
+    /// Panel shows, with the Input as it was, saying so.
     func show(input: String) {
+        let length = (input as NSString).length
+        guard length <= PanelModel.largestInput else {
+            _ = panel
+            model.refuse(length: length)
+            show()
+            return
+        }
+        model.clearRefusal()
         inspection?.invalidate()
         replacedWholeInput = false
         _ = panel
@@ -83,7 +92,15 @@ final class PanelController: NSObject, NSTextViewDelegate, NSSplitViewDelegate {
     }
 
     func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
-        if range.location == 0, range.length == (textView.string as NSString).length { replacedWholeInput = true }
+        let length = (textView.string as NSString).length
+        let after = length - range.length + ((replacementString ?? "") as NSString).length
+        guard after <= PanelModel.largestInput else {
+            model.refuse(length: after)
+            NSSound.beep()
+            return false
+        }
+        model.clearRefusal()
+        if range.location == 0, range.length == length { replacedWholeInput = true }
         return true
     }
 
