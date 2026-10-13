@@ -16,11 +16,11 @@ import TextierCore
 final class InputTextView: OwnCopyTextView {
     var matches: [Match] = [] {
         didSet {
-            let text = string as NSString
-            live = matches.filter {
-                NSMaxRange($0.range) <= text.length && text.substring(with: $0.range) == $0.text
-            }
-            .sorted { $0.range.location < $1.range.location }
+            // An inspection describes the text as it is: the Panel and the Popover
+            // drop one that started before an edit. So the range check is enough.
+            let length = (string as NSString).length
+            live = matches.filter { NSMaxRange($0.range) <= length }
+                .sorted { $0.range.location < $1.range.location }
             if let hovered, match(containing: hovered.location)?.range != hovered { self.hovered = nil }
             highlight()
             fadeInNewPills()
@@ -57,9 +57,9 @@ final class InputTextView: OwnCopyTextView {
     /// Set around a re-inspection while editing, so the pills it brings fade in;
     /// a capture's pills show at once.
     var fadesNewPills = false
-    /// What each pill showed last time, by its text and color, to tell new pills
-    /// from ones that only moved.
-    private var shownPills: [String: Int] = [:]
+    /// The Matches whose pills showed last time, to tell new pills from ones that
+    /// only moved.
+    private var shownPills: [Match] = []
     private var fade: Timer?
 
     /// The top-level Match under the pointer.
@@ -233,8 +233,54 @@ final class InputTextView: OwnCopyTextView {
         guard let pillLayoutManager else { return }
         editedText = nil
         pillLayoutManager.pills = makePills()
-        recolor(NSRange(location: 0, length: textStorage?.length ?? 0))
+        let whole = NSRange(location: 0, length: textStorage?.length ?? 0)
+        pillLayoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: whole)
+        colored = IndexSet()
+        colorVisibleText()
         needsDisplay = true
+    }
+
+    /// The text whose pills' colors are applied since the last `highlight()`, by
+    /// UTF-16 offset: a large Input's pills are colored as their text is about to
+    /// be drawn (`viewWillDraw`), not all at once.
+    private var colored = IndexSet()
+    /// How far past the visible text pills are colored ahead, either way.
+    private static let colorMargin = 20_000
+
+    /// Colors the pills over the visible text and a margin around it, where they
+    /// aren't yet.
+    private func colorVisibleText() {
+        guard let layoutManager, let textContainer, let length = textStorage?.length, length > 0 else { return }
+        let glyphs = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        let visible = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        let start = max(0, visible.location - Self.colorMargin)
+        let end = min(length, NSMaxRange(visible) + Self.colorMargin)
+        guard start < end else { return }
+        var missing = IndexSet(integersIn: start..<end)
+        missing.subtract(colored)
+        for range in missing.rangeView {
+            recolor(NSRange(location: range.lowerBound, length: range.count))
+        }
+    }
+
+    override func viewWillDraw() {
+        colorVisibleText()
+        super.viewWillDraw()
+    }
+
+    /// Scrolling colors what comes into view, before it's drawn.
+    private var scrolling: NotificationObservation?
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        guard let clipView = enclosingScrollView?.contentView else {
+            scrolling = nil
+            return
+        }
+        clipView.postsBoundsChangedNotifications = true
+        scrolling = NotificationObservation(NSView.boundsDidChangeNotification, object: clipView) { [weak self] in
+            self?.colorVisibleText()
+        }
     }
 
     /// Moves the ring from the Match at `old` to the selected one: the pills are
@@ -273,6 +319,7 @@ final class InputTextView: OwnCopyTextView {
     private func recolor(_ range: NSRange) {
         guard let pillLayoutManager else { return }
         onRecolor(range)
+        if range.length > 0 { colored.insert(integersIn: range.location..<NSMaxRange(range)) }
         pillLayoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
         for pill in pillLayoutManager.pills(overlapping: range) {
             pillLayoutManager.addTemporaryAttribute(
@@ -302,6 +349,8 @@ final class InputTextView: OwnCopyTextView {
         }
         hovered = hovered.flatMap(edit.moved)
         editedText = editedText.map { NSUnionRange(edit.extent(of: $0), touched) } ?? touched
+        // What's colored moves with the text after the edit.
+        colored.shift(startingAt: NSMaxRange(edit.range) - edit.delta, by: edit.delta)
         guard let pillLayoutManager else { return }
         pillLayoutManager.fadingRanges = Set(pillLayoutManager.fadingRanges.compactMap(edit.moved))
         // Only data here: the layout manager is still taking the edit in.
@@ -319,10 +368,18 @@ final class InputTextView: OwnCopyTextView {
     private func fadeInNewPills() {
         guard let pillLayoutManager else { return }
         let shown = highlighting ? live : []
-        func key(_ match: Match) -> String { "\(match.patternIndex)\u{1}" + match.text }
-        var before = shownPills
-        shownPills = shown.reduce(into: [:]) { $0[key($1), default: 0] += 1 }
+        let previous = shownPills
+        shownPills = shown
         guard fadesNewPills, !Motion.isReduced else { return }
+        // Counted only for a fade: a capture's hundreds of thousands of pills
+        // show at once.
+        func key(_ match: Match) -> Int {
+            var hasher = Hasher()
+            hasher.combine(match.patternIndex)
+            hasher.combine(match.text)
+            return hasher.finalize()
+        }
+        var before = previous.reduce(into: [Int: Int]()) { $0[key($1), default: 0] += 1 }
         var fresh: Set<NSRange> = []
         for match in shown {
             if let count = before[key(match)], count > 0 {

@@ -763,5 +763,28 @@ extension AppTests {
                 #expect(Set(recolored.map { "\($0)" }) == Set([datetime, url].map { "\($0)" }))
             }
         }
+
+        @Test func pillsAreColoredAsTheirTextComesIntoView() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let lines = (0..<6000).map { "line \($0) see https://x.test/\($0)" }
+                app.capture(lines.joined(separator: "\n"))
+                app.waitForInspection()
+                for _ in 0..<50 where app.model.isInspecting { app.spin(0.1) }
+                app.panel.displayIfNeeded()
+                let layoutManager = try #require(app.textView.layoutManager)
+                @MainActor func isColored(_ text: String) -> Bool {
+                    let location = app.range(of: text).location + 1
+                    return layoutManager.temporaryAttribute(.foregroundColor, atCharacterIndex: location, effectiveRange: nil) != nil
+                }
+                #expect(isColored("https://x.test/0"))
+                #expect(!isColored("https://x.test/5999"))
+
+                app.textView.scrollToEndOfDocument(nil)
+                app.panel.displayIfNeeded()
+                #expect(isColored("https://x.test/5999"))
+            }
+        }
     }
 }
