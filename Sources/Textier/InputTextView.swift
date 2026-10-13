@@ -102,6 +102,9 @@ final class InputTextView: OwnCopyTextView {
         let storage = NSTextStorage()
         let layoutManager = PillLayoutManager()
         layoutManager.delegate = layoutManager
+        // Only the text in view (and what leads to it) is laid out, so a large Input
+        // scrolls anywhere at once.
+        layoutManager.allowsNonContiguousLayout = true
         storage.addLayoutManager(layoutManager)
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         layoutManager.addTextContainer(container)
