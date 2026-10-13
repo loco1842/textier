@@ -456,7 +456,7 @@ final class JSONViewer: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate
         let triangle = outlineView.frameOfCell(atColumn: 0, row: row).minX - triangleToCell
         rowView.guides = (0..<level).map { (triangle - CGFloat(level - $0) * Self.indentation).rounded(.down) }
         rowView.isMatch = (outlineView.item(atRow: row) as? JSONNode).map { searchMatches.contains(ObjectIdentifier($0)) } ?? false
-        rowView.accent = NSColor(patternColor: accent, role: \.solid)
+        rowView.accent = NSColor.pattern(accent, \.solid)
     }
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {

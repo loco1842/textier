@@ -730,7 +730,7 @@ private final class JSONTextCoordinator: NSObject, NSTextViewDelegate {
                 found.append(range)
                 search = NSRange(location: NSMaxRange(range), length: text.length - NSMaxRange(range))
             }
-            let color = NSColor(patternColor: accent, role: \.strongTint)
+            let color = NSColor.pattern(accent, \.strongTint)
             for range in found {
                 layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: range)
             }

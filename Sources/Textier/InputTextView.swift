@@ -45,8 +45,9 @@ final class InputTextView: OwnCopyTextView {
     var inspected: (range: NSRange, color: PatternColor)? {
         get { selection }
         set {
+            let old = selection
             selection = newValue
-            highlight()
+            reselect(from: old?.range)
         }
     }
 
@@ -78,6 +79,8 @@ final class InputTextView: OwnCopyTextView {
 
     private var pillLayoutManager: PillLayoutManager? { layoutManager as? PillLayoutManager }
 
+    /// Each range whose text is colored again; the app tests watch it.
+    var onRecolor: (NSRange) -> Void = { _ in }
     /// A click without drag on a Match.
     var onClick: (Match) -> Void = { _ in }
     /// A double-click on a Match.
@@ -234,6 +237,19 @@ final class InputTextView: OwnCopyTextView {
         needsDisplay = true
     }
 
+    /// Moves the ring from the Match at `old` to the selected one: the pills are
+    /// laid out again, but only the two Matches' text is colored again, so a
+    /// selection on a large Input doesn't recolor all of it.
+    private func reselect(from old: NSRange?) {
+        guard let pillLayoutManager else { return }
+        pillLayoutManager.pills = makePills()
+        let length = textStorage?.length ?? 0
+        for range in [old, selection?.range].compactMap(\.self) where NSMaxRange(range) <= length {
+            recolor(range)
+        }
+        needsDisplay = true
+    }
+
     /// The pills, in drawing order: the Matches' by position, then the selected
     /// Match's own, with its ring, over its parent's. None with Highlighting off.
     private func makePills() -> [Pill] {
@@ -256,10 +272,11 @@ final class InputTextView: OwnCopyTextView {
     /// the rest of it plainly.
     private func recolor(_ range: NSRange) {
         guard let pillLayoutManager else { return }
+        onRecolor(range)
         pillLayoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
         for pill in pillLayoutManager.pills(overlapping: range) {
             pillLayoutManager.addTemporaryAttribute(
-                .foregroundColor, value: NSColor(patternColor: pill.color, role: \.text),
+                .foregroundColor, value: NSColor.pattern(pill.color, \.text),
                 forCharacterRange: NSIntersectionRange(pill.range, range)
             )
         }
@@ -468,7 +485,7 @@ struct Pill: Equatable {
     /// The Inspector's selection: a ring in the solid color.
     var hasRing: Bool
 
-    var fill: NSColor { NSColor(patternColor: color, role: isStrong ? \.strongTint : \.tint) }
+    var fill: NSColor { NSColor.pattern(color, isStrong ? \.strongTint : \.tint) }
 }
 
 /// Draws the Input's pills behind its text. A pill that wraps is one shape across
@@ -690,7 +707,7 @@ final class PillLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
                     // A 1.5 pt ring inside the edge: twice that, clipped to the shape.
                     shape.addClip()
                     shape.lineWidth = 3
-                    NSColor(patternColor: pill.color, role: \.solid).setStroke()
+                    NSColor.pattern(pill.color, \.solid).setStroke()
                     shape.stroke()
                 }
                 NSGraphicsContext.restoreGraphicsState()

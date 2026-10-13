@@ -1,4 +1,5 @@
 import AppKit
+import Synchronization
 import SwiftUI
 import TextierCore
 
@@ -26,6 +27,17 @@ extension NSColor {
             NSColor(hex: patternColor.roles(in: appearance)[keyPath: role]) ?? .systemBlue
         }
         self.init(light: resolve(.light), dark: resolve(.dark))
+    }
+
+    /// `init(patternColor:role:)`, made once per color and role and then reused:
+    /// working a color's roles out takes string formatting and powers, and a large
+    /// Input has hundreds of thousands of pills, each colored and drawn with them.
+    static func pattern(_ patternColor: PatternColor, _ role: KeyPath<ColorRoles, String>) -> NSColor {
+        let key = PatternColorKey(color: patternColor, role: role)
+        if let cached = patternColors.withLock({ $0[key] }) { return cached }
+        let made = NSColor(patternColor: patternColor, role: role)
+        patternColors.withLock { $0[key] = made }
+        return made
     }
 
     /// A theme's style color for the current appearance, from the light and dark themes.
@@ -68,6 +80,17 @@ extension NSColor {
 extension Color {
     /// One of a Pattern color's roles, following the appearance.
     init(_ patternColor: PatternColor, _ role: KeyPath<ColorRoles, String>) {
-        self.init(nsColor: NSColor(patternColor: patternColor, role: role))
+        self.init(nsColor: NSColor.pattern(patternColor, role))
     }
 }
+
+/// A Pattern color and one of its roles, for `NSColor.pattern(_:_:)`'s cache.
+/// Key paths are immutable, so sharing one across threads is safe.
+private struct PatternColorKey: Hashable, @unchecked Sendable {
+    let color: PatternColor
+    let role: KeyPath<ColorRoles, String>
+}
+
+/// The colors `NSColor.pattern(_:_:)` made: a few per Pattern color and Color Rule
+/// color a config has had, so it stays small.
+private let patternColors = Mutex<[PatternColorKey: NSColor]>([:])

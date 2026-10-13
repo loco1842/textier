@@ -115,3 +115,5 @@ Open questions:
 |---|---|---|---|---|---|---|---|
 | Baseline | 10k | 0.81 s | 4.04 s | 1.97 s | 0.22 s | 4.39 s | 123 MB |
 | Baseline | 100k | 14.34 s (`url` stopped) | 40.29 s | 18.17 s | 2.31 s | 47.25 s | +112 MB |
+| 1. Colors cached, selection recolors two ranges | 10k | 1.29 s | 1.75 s | 0.53 s | 0.26 s | 1.97 s | 116 MB |
+| 1. Colors cached, selection recolors two ranges | 100k | 10.46 s | 15.20 s | 6.47 s | 2.46 s | 22.28 s | — |

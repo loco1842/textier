@@ -747,5 +747,21 @@ extension AppTests {
                 #expect(app.model.highlighting)
             }
         }
+
+        @Test func selectingAnEntryRecolorsOnlyTheOldAndNewSelection() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                app.capture(AppFixtures.monologLine)
+                try app.select("datetime", 0)
+                var recolored: [NSRange] = []
+                app.textView.onRecolor = { recolored.append($0) }
+
+                try app.select("url", 0)
+                let datetime = try #require(app.inspection.tab(.pattern("datetime"))?.entries.first).range
+                let url = try #require(app.inspection.tab(.pattern("url"))?.entries.first).range
+                #expect(Set(recolored.map { "\($0)" }) == Set([datetime, url].map { "\($0)" }))
+            }
+        }
     }
 }

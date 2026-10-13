@@ -369,7 +369,7 @@ private struct TestTextView: NSViewRepresentable {
         storage.beginEditing()
         storage.removeAttribute(.backgroundColor, range: whole)
         for match in matches where NSMaxRange(match.range) <= storage.length {
-            storage.addAttribute(.backgroundColor, value: NSColor(patternColor: color, role: \.tint), range: match.range)
+            storage.addAttribute(.backgroundColor, value: NSColor.pattern(color, \.tint), range: match.range)
         }
         storage.endEditing()
     }
