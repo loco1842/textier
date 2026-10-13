@@ -763,5 +763,37 @@ extension AppTests {
                 #expect(isColored("https://x.test/5999"))
             }
         }
+
+        @Test func withCommandHeldThePointerOverAMatchIsTheHand() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                app.capture(AppFixtures.monologLine)
+                let datetime = app.point(inInput: app.range(of: "2026-10-07 11:17:10"))
+                let plain = app.point(inInput: app.range(of: "invoked"))
+                @MainActor func move(to point: NSPoint, _ modifiers: NSEvent.ModifierFlags) {
+                    app.textView.mouseMoved(with: app.mouseEvent(.mouseMoved, at: point, modifiers: modifiers))
+                }
+
+                // Moving onto a Match with ⌘ held: the hand, as the text view's own
+                // I-beam handling would otherwise set the cursor back.
+                move(to: plain, [.command])
+                #expect(NSCursor.current == NSCursor.iBeam)
+                move(to: datetime, [.command])
+                #expect(NSCursor.current == NSCursor.pointingHand)
+
+                // Letting go of ⌘ over it: the I-beam again; pressing it again: the hand.
+                let pointer = app.textView.convert(datetime, from: nil)
+                app.textView.pointerLocation = { pointer }
+                app.textView.updateModifiers([])
+                #expect(NSCursor.current == NSCursor.iBeam)
+                app.textView.updateModifiers([.command])
+                #expect(NSCursor.current == NSCursor.pointingHand)
+
+                // Without ⌘, over a Match: the I-beam.
+                move(to: datetime, [])
+                #expect(NSCursor.current == NSCursor.iBeam)
+            }
+        }
     }
 }

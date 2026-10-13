@@ -158,12 +158,30 @@ final class InputTextView: OwnCopyTextView {
         guard acting != isActingOnMatches else { return }
         isActingOnMatches = acting
         window?.invalidateCursorRects(for: self)
-        if acting, let window {
-            let index = characterIndex(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        guard let pointer = pointerLocation() else { return }
+        if acting {
+            let index = characterIndex(at: pointer)
             hover(index.flatMap(match(containing:))?.range)
         } else {
             hover(nil)
         }
+        showCursor(at: pointer)
+    }
+
+    /// Where the pointer is, in this view's coordinates; the app tests set it, as
+    /// the real pointer is wherever the person at the Mac left it.
+    lazy var pointerLocation: () -> NSPoint? = { [weak self] in
+        guard let self, let window = self.window else { return nil }
+        return self.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+    }
+
+    /// The hand over a Match while the Match click's modifiers are held, else the
+    /// I-beam; only with the pointer over the text. Set outright, since cursor rects
+    /// change it only as the pointer enters one, and the text view puts its I-beam
+    /// back as the pointer moves.
+    private func showCursor(at point: NSPoint) {
+        guard visibleRect.contains(point) else { return }
+        (isActingOnMatches && match(at: point) != nil ? NSCursor.pointingHand : NSCursor.iBeam).set()
     }
 
     override func flagsChanged(with event: NSEvent) {
@@ -188,12 +206,14 @@ final class InputTextView: OwnCopyTextView {
         pointerTracking = area
     }
 
-    /// Deepens the pill under the pointer. The cursor is left to the cursor rects:
-    /// setting it here too fought the text view's I-beam rect, so it flickered.
+    /// Deepens the pill under the pointer, and shows the hand over it while the
+    /// Match click's modifiers are held.
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
         updateModifiers(event.modifierFlags)
-        let index = isActingOnMatches ? characterIndex(at: convert(event.locationInWindow, from: nil)) : nil
+        let point = convert(event.locationInWindow, from: nil)
+        showCursor(at: point)
+        let index = isActingOnMatches ? characterIndex(at: point) : nil
         // Still over the same pill: nothing to look up.
         if let index, let hovered, NSLocationInRange(index, hovered) { return }
         hover(index.flatMap(match(containing:))?.range)
