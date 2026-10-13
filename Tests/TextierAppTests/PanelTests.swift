@@ -219,7 +219,7 @@ extension AppTests {
                 app.capture(String(repeating: "a", count: 40) + "!")
 
                 #expect(app.model.warnings == [
-                    #"Pattern "runaway" took over 2 s on this text and was stopped; some Matches may be missing"#
+                    #"Pattern "runaway" was stopped after 2 s; some of its Matches may be missing"#
                 ])
 
                 app.type("", replacing: NSRange(location: 40, length: 1))

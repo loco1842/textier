@@ -15,12 +15,18 @@ public struct Inspection: Sendable, Equatable {
     /// some of their Matches may be missing; by name, in the order they were
     /// stopped (Config order, unless one ran out on a Field value).
     public var slowPatterns: [String]
+    /// The time limit each Pattern had (`Pattern.timeLimit(forLength:)`).
+    public var timeLimit: Duration
 
-    public init(matches: [Match], tabs: [InspectorTab], selection: EntryID?, slowPatterns: [String] = []) {
+    public init(
+        matches: [Match], tabs: [InspectorTab], selection: EntryID?, slowPatterns: [String] = [],
+        timeLimit: Duration = Pattern.timeLimit
+    ) {
         self.matches = matches
         self.tabs = tabs
         self.selection = selection
         self.slowPatterns = slowPatterns
+        self.timeLimit = timeLimit
     }
 
     /// The Inspector is shown only when at least one Pattern tab exists.
@@ -281,20 +287,24 @@ public struct FilePathDetail: Sendable, Equatable {
 /// object's `line` (`fileLineTargets(in:config:)`) and previews as `path:line`.
 /// `fileExists` is asked about each file path (after `~/` expansion against
 /// `homeDirectory`), so tests never touch the disk. A Pattern still matching after
-/// `timeLimit` (`Pattern.timeLimit`, shorter in tests), over all its passes in this
-/// inspection, is stopped and named in `slowPatterns`.
+/// `timeLimit` (by default `Pattern.timeLimit(forLength:)`, shorter in tests), over
+/// all its passes in this inspection, is stopped and named in `slowPatterns`.
+/// `progress` is told how far detection has got, from 0 to 1, as the text's
+/// chunks are matched (on several threads at once).
 ///
 /// Once `isCancelled` returns true, inspecting stops early, and what it returns is
 /// incomplete and meant to be dropped.
 public func inspect(
     _ input: String, config: Config, previous: Inspection? = nil, now: Date, timeZone: TimeZone,
-    homeDirectory: String = NSHomeDirectory(), timeLimit: Duration = Pattern.timeLimit,
-    isCancelled: @escaping @Sendable () -> Bool = { false }, fileExists: @Sendable (String) -> Bool
+    homeDirectory: String = NSHomeDirectory(), timeLimit: Duration? = nil,
+    isCancelled: @escaping @Sendable () -> Bool = { false }, progress: @Sendable (Double) -> Void = { _ in },
+    fileExists: @Sendable (String) -> Bool
 ) -> Inspection {
+    let timeLimit = timeLimit ?? Pattern.timeLimit(forLength: (input as NSString).length)
     let budget = MatchingBudget(timeLimit: timeLimit, isCancelled: isCancelled)
     // A cancelled inspection's result is never used: it stops at the next check.
     let cancelled = Inspection(matches: [], tabs: [], selection: nil)
-    let matches = detect(input, config: config, budget: budget)
+    let matches = detect(input, config: config, budget: budget, progress: progress)
     if budget.isCancelled() { return cancelled }
     let parser = DetailParser(config: config, now: now, timeZone: timeZone, homeDirectory: homeDirectory)
     let linesByRange = pairedLines(in: matches, config: config, budget: budget)
@@ -370,7 +380,9 @@ public func inspect(
         tabs.append(InspectorTab(id: .plainText, title: "Plain Text", color: nil, glyph: .plainText, entries: plainText))
     }
 
-    var inspection = Inspection(matches: matches, tabs: tabs, selection: nil, slowPatterns: budget.stopped)
+    var inspection = Inspection(
+        matches: matches, tabs: tabs, selection: nil, slowPatterns: budget.stopped, timeLimit: timeLimit
+    )
     inspection.selection = inspection.selection(keeping: previous)
     return inspection
 }

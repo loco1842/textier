@@ -121,3 +121,5 @@ Open questions:
 | 2. Inspector list on NSTableView | 100k | — | 10.64 s | 0.09 s | 2.44 s | 14.02 s | 183 MB |
 | 3. Datetimes by arithmetic, entries and Plain Text built on every core | 10k | 0.40 s | 0.74 s | 0.13 s | 0.22 s | 0.71 s | 136 MB |
 | 3. Datetimes by arithmetic, entries and Plain Text built on every core | 100k | 2.90 s | 4.36 s | 0.08 s | 2.20 s | 5.92 s | — |
+| 4. Detection in line chunks on every core; time limit by size; progress | 10k | 0.17 s | 0.60 s | 0.14 s | 0.22 s | 0.60 s | 135 MB |
+| 4. Detection in line chunks on every core; time limit by size; progress | 100k | 1.78 s | 3.20 s | 0.07 s | 2.19 s | 4.80 s | — |

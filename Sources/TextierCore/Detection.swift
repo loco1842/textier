@@ -1,11 +1,21 @@
 import Foundation
+import Synchronization
 
 extension Pattern {
-    /// How long one Pattern may spend matching in one inspection, across all its
-    /// `detect` passes (the Input's, each Field value's, each paired `file`'s),
-    /// before it's stopped, so a regex that backtracks catastrophically can't hang
-    /// the app. A shipped Pattern takes a fraction of this over a few MB of logs.
+    /// How long one Pattern may spend matching in one inspection of a short text,
+    /// across all its `detect` passes (the Input's chunks, each Field value's, each
+    /// paired `file`'s), before it's stopped, so a regex that backtracks
+    /// catastrophically can't hang the app. `timeLimit(forLength:)` grows it with
+    /// the text.
     public static let timeLimit: Duration = .seconds(2)
+
+    /// The time limit for a text `length` UTF-16 units long: `timeLimit`, plus a
+    /// second for each MB past 2 MB. A shipped Pattern takes about 0.06 s a MB, so
+    /// only a runaway one gets near it.
+    public static func timeLimit(forLength length: Int) -> Duration {
+        let megabytes = Double(length) / 1_048_576
+        return timeLimit + .seconds(max(0, megabytes - 2))
+    }
 }
 
 /// Detects the top-level Matches in `input`, ordered by position.
@@ -24,39 +34,55 @@ public func detect(_ input: String, config: Config) -> [Match] {
 
 /// `detect` with only the enabled Patterns `include` accepts, so Matches keep
 /// their Pattern's index in `config`.
-func detect(_ input: String, config: Config, including include: (Pattern) -> Bool) -> [Match] {
-    detect(input, config: config, budget: MatchingBudget(), including: include)
+func detect(_ input: String, config: Config, including include: @Sendable (Pattern) -> Bool) -> [Match] {
+    let budget = MatchingBudget(timeLimit: Pattern.timeLimit(forLength: (input as NSString).length))
+    return detect(input, config: config, budget: budget, including: include)
 }
 
 /// What the `detect` passes of one inspection may spend: each Pattern's
-/// `timeLimit`, shared by all its passes, and nothing more once `isCancelled`
-/// says so. Every pass of one budget takes the same Config.
-final class MatchingBudget {
+/// `timeLimit`, shared by all its passes (and the chunks of each, which run at
+/// once on several cores), and nothing more once `isCancelled` says so. Every
+/// pass of one budget takes the same Config.
+final class MatchingBudget: Sendable {
     let timeLimit: Duration
     let isCancelled: @Sendable () -> Bool
-    /// The Patterns stopped for taking longer than `timeLimit`, by name, once
-    /// each, in the order they were stopped.
-    private(set) var stopped: [String] = []
-    /// The time each Pattern has spent matching, by its index in the Config.
-    private var spent: [Int: Duration] = [:]
+    private struct State {
+        var stopped: [String] = []
+        var spent: [Int: Duration] = [:]
+    }
+    private let state = Mutex(State())
 
     init(timeLimit: Duration = Pattern.timeLimit, isCancelled: @escaping @Sendable () -> Bool = { false }) {
         self.timeLimit = timeLimit
         self.isCancelled = isCancelled
     }
 
+    /// The Patterns stopped for taking longer than `timeLimit`, by name, once
+    /// each, in the order they were stopped.
+    var stopped: [String] { state.withLock { $0.stopped } }
+
     /// What's left of the Pattern at `order`'s time.
     func remaining(_ order: Int) -> Duration {
-        timeLimit - spent[order, default: .zero]
+        timeLimit - state.withLock { $0.spent[order, default: .zero] }
     }
 
-    /// Records a pass of the Pattern at `order` that took `elapsed`, and whether it
-    /// was stopped for running out of time.
-    /// A Pattern whose time is used up counts as stopped too, as it won't run again
-    /// in this inspection, though no one pass of it ran long enough to be cut off.
-    func record(_ order: Int, name: String, elapsed: Duration, stopped wasStopped: Bool) {
-        spent[order, default: .zero] += elapsed
-        if wasStopped || remaining(order) <= .zero, !stopped.contains(name) { stopped.append(name) }
+    /// Adds `elapsed` to the time the Pattern at `order` has spent, and returns
+    /// whether it's now used up.
+    func charge(_ order: Int, _ elapsed: Duration) -> Bool {
+        state.withLock {
+            $0.spent[order, default: .zero] += elapsed
+            return $0.spent[order, default: .zero] >= timeLimit
+        }
+    }
+
+    /// Notes the Pattern named `name`, at `order`, as stopped when it was cut off
+    /// or its time is used up: it won't run again in this inspection, though no one
+    /// pass of it ran long enough to be cut off.
+    func finish(_ order: Int, name: String, stopped wasStopped: Bool) {
+        state.withLock {
+            let usedUp = $0.spent[order, default: .zero] >= timeLimit
+            if wasStopped || usedUp, !$0.stopped.contains(name) { $0.stopped.append(name) }
+        }
     }
 }
 
@@ -64,14 +90,51 @@ final class MatchingBudget {
 /// which notes those it stopped. Once the budget is cancelled, no more Patterns
 /// run and the Matches are incomplete.
 func detect(
-    _ input: String, config: Config, budget: MatchingBudget, including include: (Pattern) -> Bool = { _ in true }
+    _ input: String, config: Config, budget: MatchingBudget, including include: (Pattern) -> Bool = { _ in true },
+    chunkSize: Int? = nil, progress: @Sendable (Double) -> Void = { _ in }
 ) -> [Match] {
-    var candidates: [Candidate] = []
+    // Each regex Pattern runs over the text's chunks, and each Built-in Pattern
+    // over the whole of it, all at once on every core; then each Pattern's
+    // Matches are put back in order.
+    let text = input as NSString
+    let chunks = lineChunks(of: text, size: chunkSize)
+    var jobs: [MatchingJob] = []
     for (order, pattern) in config.patterns.enumerated() where pattern.enabled && include(pattern) {
-        if budget.isCancelled() { return [] }
-        let found = matches(of: pattern, at: order, in: input, grok: config.grok, budget: budget)
-        for match in found where match.range.length > 0 {
-            candidates.append(Candidate(range: match.range, order: order, pattern: pattern, fields: match.fields))
+        if case .regex = pattern.kind {
+            jobs += chunks.map { MatchingJob(order: order, pattern: pattern, chunk: $0) }
+        } else {
+            jobs.append(MatchingJob(order: order, pattern: pattern, chunk: nil))
+        }
+    }
+    let done = Mutex(0)
+    let jobCount = jobs.count
+    let found = jobs.concurrentMap(chunk: 1) { job in
+        let found = budget.isCancelled()
+            ? FoundMatches() : matches(of: job.pattern, at: job.order, in: input, chunk: job.chunk, grok: config.grok, budget: budget)
+        let finished = done.withLock { count in
+            count += 1
+            return count
+        }
+        progress(Double(finished) / Double(jobCount))
+        return found
+    }
+    if budget.isCancelled() { return [] }
+    var candidates: [Candidate] = []
+    var previous: (order: Int, end: Int)?
+    for (job, found) in zip(jobs, found) {
+        for match in found.matches where match.range.length > 0 {
+            // A chunk's search runs a little past its end, so a Match the chunk
+            // before it ended inside this one isn't followed by one starting inside it.
+            if let previous, previous.order == job.order, match.range.location < previous.end { continue }
+            candidates.append(Candidate(range: match.range, order: job.order, pattern: job.pattern, fields: match.fields))
+            previous = (job.order, NSMaxRange(match.range))
+        }
+        if job.chunk == nil { previous = nil }
+    }
+    for (order, pattern) in config.patterns.enumerated() where pattern.enabled && include(pattern) {
+        if case .regex = pattern.kind {
+            let stopped = zip(jobs, found).contains { $0.order == order && $1.stopped }
+            budget.finish(order, name: pattern.name, stopped: stopped)
         }
     }
     // Nothing found is the usual answer for a Field value (`stringValueMatch`), so
@@ -87,6 +150,37 @@ func detect(
         return pattern.effectiveColorRules.compactMap { rule in rule.regex(grok: config.grok).map { ($0, rule.color) } }
     }
     return nest(ordered[...], in: input as NSString, colors: config.resolvedColors, rules: rules)
+}
+
+/// One Pattern over one chunk of the text (nil for the whole of it).
+private struct MatchingJob: Sendable {
+    var order: Int
+    var pattern: Pattern
+    var chunk: NSRange?
+}
+
+/// How far past its end a chunk's search runs, so a Match that starts in the
+/// chunk and runs on past its end is found whole.
+let chunkOverlap = 4096
+
+/// The text cut at line ends into chunks for several cores to match at once, or
+/// one chunk for a text too short to be worth cutting. `size` (in UTF-16 units)
+/// overrides the chunks' size, for the tests.
+func lineChunks(of text: NSString, size: Int? = nil) -> [NSRange] {
+    let length = text.length
+    let smallest = 262_144
+    guard size != nil || length >= 2 * smallest else { return [NSRange(location: 0, length: length)] }
+    let size = size ?? max(smallest, length / (ProcessInfo.processInfo.activeProcessorCount * 2))
+    var chunks: [NSRange] = []
+    var start = 0
+    while start < length {
+        var end = min(start + size, length)
+        // On to the next line's start, so no line is split.
+        while end < length, text.character(at: end - 1) != 0x0A { end += 1 }
+        chunks.append(NSRange(location: start, length: end - start))
+        start = end
+    }
+    return chunks
 }
 
 /// `stringValueMatch` within `budget`: the Match `string` is in its entirety, of a
@@ -112,18 +206,26 @@ private struct Candidate {
 /// Fields: those found before its time in `budget` ran out (it's then noted as
 /// stopped) or the budget was cancelled.
 private func matches(
-    of pattern: Pattern, at order: Int, in input: String, grok: [GrokDefinition], budget: MatchingBudget
-) -> [(range: NSRange, fields: [Field])] {
+    of pattern: Pattern, at order: Int, in input: String, chunk: NSRange?, grok: [GrokDefinition],
+    budget: MatchingBudget
+) -> FoundMatches {
     switch pattern.kind {
     case .regex(let source):
         // Stopped in an earlier pass of this inspection: it isn't run again.
-        let remaining = budget.remaining(order)
-        guard remaining > .zero, case .success(let compiled) = compileRegex(source, grok: grok) else { return [] }
+        guard budget.remaining(order) > .zero, case .success(let compiled) = compileRegex(source, grok: grok) else {
+            return FoundMatches()
+        }
         let text = input as NSString
+        // A chunk is searched a little past its end; only Matches starting in it are
+        // kept. Its bounds are transparent and not anchors, so lookarounds, `^` and
+        // `$` see the text around it, as they would searching the whole text.
+        let keptEnd = chunk.map(NSMaxRange) ?? text.length
+        let searched = chunk.map {
+            NSRange(location: $0.location, length: min(NSMaxRange($0) + chunkOverlap, text.length) - $0.location)
+        } ?? NSRange(location: 0, length: text.length)
         let clock = ContinuousClock()
-        let start = clock.now
-        let deadline = start.advanced(by: remaining)
-        var found: [(range: NSRange, fields: [Field])] = []
+        var lastCharge = clock.now
+        var found = FoundMatches()
         var stopped = false
         var calls = 0
         // With `reportProgress`, ICU also calls back every so often during one long
@@ -133,33 +235,48 @@ private func matches(
         // make a shipped Pattern several times slower. A runaway regex calls back
         // a few thousand times a second, so it's still stopped within a moment.
         compiled.regex.enumerateMatches(
-            in: input, options: .reportProgress, range: NSRange(location: 0, length: text.length)
+            in: input, options: [.reportProgress, .withTransparentBounds, .withoutAnchoringBounds], range: searched
         ) { result, _, stop in
             if let result {
+                guard result.range.location < keptEnd else {
+                    stop.pointee = true
+                    return
+                }
                 let fields = compiled.fields.compactMap { field -> Field? in
                     let range = result.range(withName: field.group)
                     guard range.location != NSNotFound else { return nil }
                     return Field(name: field.name, type: field.type, value: text.substring(with: range), range: range)
                 }
-                found.append((result.range, fields))
+                found.matches.append((result.range, fields))
             }
             calls &+= 1
             guard calls % 256 == 0 else { return }
-            if clock.now >= deadline {
+            // The time goes to the Pattern as it's spent, so its chunks running at
+            // once share one limit.
+            let now = clock.now
+            if budget.charge(order, now - lastCharge) {
                 stopped = true
                 stop.pointee = true
             } else if budget.isCancelled() {
                 stop.pointee = true
             }
+            lastCharge = now
         }
-        budget.record(order, name: pattern.name, elapsed: start.duration(to: clock.now), stopped: stopped)
+        _ = budget.charge(order, clock.now - lastCharge)
+        found.stopped = stopped
         return found
     case .builtin(.json):
-        return jsonRanges(in: input).map { ($0, []) }
+        return FoundMatches(matches: jsonRanges(in: input).map { ($0, []) })
     case .builtin(.escapedJSON):
         // Applies to JSON string values in the JSON Viewer, not to the Input (ticket 08).
-        return []
+        return FoundMatches()
     }
+}
+
+/// What one matching pass found, and whether its Pattern was stopped in it.
+private struct FoundMatches: Sendable {
+    var matches: [(range: NSRange, fields: [Field])] = []
+    var stopped = false
 }
 
 /// Keeps the candidates that survive the overlap rule. Taking candidates longest

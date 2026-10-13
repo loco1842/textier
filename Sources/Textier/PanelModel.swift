@@ -41,13 +41,21 @@ final class PanelModel {
     /// stopped for taking too long.
     var warnings: [String] {
         otherWarnings + inspection.slowPatterns.map { name in
-            "Pattern \"\(name)\" took over \(Pattern.timeLimit.components.seconds) s on this text and was stopped; "
-                + "some Matches may be missing"
+            "Pattern \"\(name)\" was stopped after \(Self.secondsText(inspection.timeLimit)) s; "
+                + "some of its Matches may be missing"
         }
     }
     private var otherWarnings: [String] = []
     /// Whether a large Input is being inspected in the background (`inspect`).
     private(set) var isInspecting = false
+    /// How far that inspection has got, in whole percent, while `isInspecting`.
+    private(set) var inspectionPercent = 0
+
+    /// `2`, or `2.5`: a time limit in seconds, as the warning says it.
+    static func secondsText(_ duration: Duration) -> String {
+        let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        return seconds == seconds.rounded() ? String(Int(seconds)) : String(format: "%.1f", seconds)
+    }
     /// How the Inspector groups Matches: the Config's `inspectorLayout` to start
     /// with, then the toolbar switch (⌘L) until the app quits or the Config's value
     /// changes.
@@ -115,6 +123,7 @@ final class PanelModel {
             return
         }
         isInspecting = true
+        inspectionPercent = 0
         if fresh { apply(Inspection(matches: [], tabs: [], selection: nil), fresh: true, config: config) }
         let timeZone = TimeZone.current
         let generation = generation
@@ -122,9 +131,25 @@ final class PanelModel {
         // Swift traps a main-actor closure that runs anywhere but the main queue.
         Self.inspections.async { @Sendable [weak self] in
             guard generation.isLatest(started) else { return }
+            // Detection is most of an inspection: its share done shows as 0–90%, and
+            // only when the whole percent changes.
+            let lastPercent = Mutex(0)
             let next = TextierCore.inspect(
                 input, config: config, previous: previous, now: now, timeZone: timeZone,
                 isCancelled: { !generation.isLatest(started) },
+                progress: { fraction in
+                    let percent = Int(fraction * 90)
+                    guard lastPercent.withLock({ last in
+                        defer { last = max(last, percent) }
+                        return percent > last
+                    }) else { return }
+                    RunLoop.main.perform(inModes: [.common]) {
+                        MainActor.assumeIsolated {
+                            guard let self, generation.isLatest(started) else { return }
+                            self.inspectionPercent = max(self.inspectionPercent, percent)
+                        }
+                    }
+                },
                 fileExists: { FileManager.default.fileExists(atPath: $0) }
             )
             RunLoop.main.perform(inModes: [.common]) {

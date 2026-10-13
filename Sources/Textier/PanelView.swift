@@ -58,7 +58,8 @@ private struct PanelHeader: View {
             }
             Spacer(minLength: 8)
             if model.isInspecting {
-                Text("Inspecting…")
+                Text("Inspecting… \(model.inspectionPercent)%")
+                    .monospacedDigit()
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
