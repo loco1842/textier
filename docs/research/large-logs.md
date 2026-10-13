@@ -117,3 +117,5 @@ Open questions:
 | Baseline | 100k | 14.34 s (`url` stopped) | 40.29 s | 18.17 s | 2.31 s | 47.25 s | +112 MB |
 | 1. Colors cached, selection recolors two ranges | 10k | 1.29 s | 1.75 s | 0.53 s | 0.26 s | 1.97 s | 116 MB |
 | 1. Colors cached, selection recolors two ranges | 100k | 10.46 s | 15.20 s | 6.47 s | 2.46 s | 22.28 s | — |
+| 2. Inspector list on NSTableView | 10k | — | 1.40 s | 0.14 s | 0.20 s | 1.41 s | 136 MB |
+| 2. Inspector list on NSTableView | 100k | — | 10.64 s | 0.09 s | 2.44 s | 14.02 s | 183 MB |

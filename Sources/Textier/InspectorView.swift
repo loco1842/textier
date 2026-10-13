@@ -37,82 +37,37 @@ struct InspectorView: View {
     }
 
     private var list: some View {
-        ScrollViewReader { proxy in
-            List(selection: selection) {
-                switch model.layout {
-                case .tabs:
-                    if let tab = model.selectedTab { rows(of: tab) }
-                case .list:
-                    // Headers are plain rows, not Section headers, which a plain list
-                    // pins to its top on a bar.
-                    ForEach(model.inspection.tabs) { tab in
-                        SectionHeader(tab: tab, color: model.color(of: tab), isExpanded: expansion(of: tab.id))
-                            .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 0, trailing: 0))
-                            .listRowSeparator(.hidden)
-                            .selectionDisabled()
-                        if !model.isCollapsed(tab.id) { rows(of: tab) }
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            // No menu: the primary action is a double-click or Return on a row.
-            .contextMenu(forSelectionType: EntryID.self, menu: { _ in }, primaryAction: { _ in model.runFirstAction() })
-            .onKeyPress(phases: .down) { press in
-                // Tab and Shift-Tab (a backtab character) go back to the Input.
-                guard press.key == .tab || press.characters == "\u{19}" else { return .ignored }
-                model.focusInput()
-                return .handled
-            }
-            .onChange(of: model.inspection.selection) { _, selection in
-                if let selection { proxy.scrollTo(selection) }
-            }
-        }
+        // The values the list shows are read here, so SwiftUI updates it when they change.
+        EntryList(
+            model: model, tabsRevision: model.tabsRevision, layout: model.layout, collapsed: model.collapsed,
+            selection: model.inspection.selection, readsAsUTC: model.readsDatetimeAsUTC,
+            listHasFocus: model.listHasFocus
+        )
         .mask(EdgeFade(bottom: 12))
-    }
-
-    private func rows(of tab: InspectorTab) -> some View {
-        ForEach(tab.entries, id: \.index) { entry in
-            let id = EntryID(tab: tab.id, index: entry.index)
-            let isSelected = model.inspection.selection == id
-            EntryRow(
-                entry: entry, color: entry.color ?? model.color(of: tab), parentColor: entry.parent.map(model.color(ofParent:)),
-                isSelected: isSelected, readsAsUTC: model.readsDatetimeAsUTC
-            )
-            .tag(id)
-            .id(id)
-            .background(NoSystemHighlight())
-            .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
-            .listRowSeparator(.hidden)
-            .listRowBackground(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? Color(entry.color ?? model.color(of: tab), \.tint) : .clear)
-                    // Keyboard focus: a ring in the solid color, as the Input rings the selection.
-                    .strokeBorder(
-                        isSelected && model.listHasFocus ? Color(entry.color ?? model.color(of: tab), \.solid) : .clear,
-                        lineWidth: 1.5
-                    )
-                    .padding(.horizontal, 8)
-            )
-        }
-        .animation(reduceMotion ? nil : .spring(duration: 0.25), value: model.inspection.selection)
     }
 
     /// The row list's height before the divider is dragged: its rows', up to a cap,
     /// so the Action bar and card follow right under them.
     private var fittedListHeight: CGFloat {
-        func height(of tab: InspectorTab) -> CGFloat {
-            tab.entries.reduce(0) { $0 + ($1.summary == nil ? EntryRow.oneLineHeight : EntryRow.twoLineHeight) }
-        }
-        let rows: CGFloat = switch model.layout {
-        case .tabs:
-            model.selectedTab.map(height(of:)) ?? 0
-        case .list:
-            model.inspection.tabs.reduce(0) { total, tab in
-                total + SectionHeader.height + (model.isCollapsed(tab.id) ? 0 : height(of: tab))
+        let cap: CGFloat = model.layout == .tabs ? 206 : 290
+        // Rows are added up only until they pass the cap: a large Input has many.
+        var rows: CGFloat = 0
+        func add(_ tab: InspectorTab) {
+            for entry in tab.entries {
+                guard rows <= cap else { return }
+                rows += EntryRow.height(of: entry)
             }
         }
-        return min(model.layout == .tabs ? 206 : 290, rows + 4)
+        switch model.layout {
+        case .tabs:
+            model.selectedTab.map(add)
+        case .list:
+            for tab in model.inspection.tabs where rows <= cap {
+                rows += SectionHeader.height
+                if !model.isCollapsed(tab.id) { add(tab) }
+            }
+        }
+        return min(cap, rows + 4)
     }
 
     private var selection: Binding<EntryID?> {
@@ -367,8 +322,9 @@ private struct TabPill: View {
 }
 
 /// A section header in the list layout: the disclosure, the Glyph, the name and a
-/// count chip. A click anywhere on it collapses or expands the section.
-private struct SectionHeader: View {
+/// count chip. A click anywhere on it collapses or expands the section (the list
+/// handles the click; VoiceOver's action toggles it here).
+struct SectionHeader: View {
     static let height: CGFloat = 30
 
     let tab: InspectorTab
@@ -394,10 +350,6 @@ private struct SectionHeader: View {
         }
         .padding(.horizontal, 8)
         .frame(height: Self.height)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(reduceMotion ? nil : .spring(duration: 0.25)) { isExpanded.toggle() }
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(tab.title), \(tab.matchCountText)")
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
@@ -409,10 +361,15 @@ private struct SectionHeader: View {
 /// A row: a bar in the Pattern's color, the entry's index within its tab, then the
 /// Summary over the faint raw preview (or the preview alone when there's no
 /// Summary), and the parent chip of a nested Match.
-private struct EntryRow: View {
+struct EntryRow: View {
     /// A row's height with its insets, for fitting the list to its rows.
     static let oneLineHeight: CGFloat = 28
     static let twoLineHeight: CGFloat = 46
+
+    /// Two lines with a Summary, one without.
+    static func height(of entry: InspectorEntry) -> CGFloat {
+        entry.summary == nil ? oneLineHeight : twoLineHeight
+    }
 
     let entry: InspectorEntry
     let color: PatternColor
@@ -581,23 +538,5 @@ extension InspectorEntry {
         var label = "\(index): \(summary ?? preview)"
         if let parent { label += ", \(parent.description)" }
         return label
-    }
-}
-
-/// Turns off the selection highlight of the table a row sits in, since rows draw
-/// their own in their Pattern's color. Each row does it as it lands in the table,
-/// which SwiftUI may build (or rebuild) at any point, such as when typing brings
-/// the Inspector in.
-private struct NoSystemHighlight: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { Probe() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    private final class Probe: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            var view = superview
-            while let current = view, !(current is NSTableView) { view = current.superview }
-            (view as? NSTableView)?.selectionHighlightStyle = .none
-        }
     }
 }

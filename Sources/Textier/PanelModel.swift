@@ -9,6 +9,10 @@ import TextierCore
 final class PanelModel {
     /// The current Inspection; its `selection` is the Inspector's selected entry.
     private(set) var inspection = Inspection(matches: [], tabs: [], selection: nil)
+    /// Bumped whenever the Inspection's tabs change (a new inspection, a tab
+    /// moved), not for a new selection: the row list rebuilds on it rather than
+    /// comparing every entry.
+    private(set) var tabsRevision = 0
     /// A Panel setting: whether the Input shows tints and click behaviour.
     var highlighting = true {
         didSet { onHighlightingChange(highlighting) }
@@ -158,6 +162,7 @@ final class PanelModel {
             layout = config.inspectorLayout
         }
         inspection = next
+        tabsRevision += 1
         onInspectionChange(next)
     }
 
@@ -172,6 +177,7 @@ final class PanelModel {
         tabOrderChanges = NotificationObservation(Self.tabOrderDidChange, object: nil) { [weak self] in
             guard let self else { return }
             inspection.tabs = arrangedTabs(inspection.tabs, order: tabOrder)
+            tabsRevision += 1
         }
     }
 
