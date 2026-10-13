@@ -203,6 +203,18 @@ private struct TabBar: View {
     @State private var dragged: InspectorTab.ID?
 
     var body: some View {
+        HStack(spacing: 4) {
+            tabs
+            // The selected tab's order; Plain Text keeps its own.
+            if let tab = model.selectedTab, let kind = tab.sortKind {
+                SortMenu(kind: kind, order: model.order(of: tab.id)) { model.setOrder($0, of: tab.id) }
+                    .padding(.trailing, 10)
+                    .padding(.top, 4)
+            }
+        }
+    }
+
+    private var tabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(Array(model.inspection.tabs.enumerated()), id: \.element.id) { number, tab in
@@ -330,7 +342,10 @@ struct SectionHeader: View {
     let tab: InspectorTab
     let color: PatternColor
     @Binding var isExpanded: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The section's order, and how to change it; nil for Plain Text.
+    var sorting: (order: EntryOrder, choose: (EntryOrder) -> Void)?
+    /// The sort menu shows while the pointer is over the header, or once sorted.
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 7) {
@@ -346,10 +361,14 @@ struct SectionHeader: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.primary)
             Spacer(minLength: 4)
+            if let sorting, let kind = tab.sortKind, hovering || sorting.order != .position {
+                SortMenu(kind: kind, order: sorting.order, choose: sorting.choose)
+            }
             Chip(text: "\(tab.entries.count)", color: color)
         }
         .padding(.horizontal, 8)
         .frame(height: Self.height)
+        .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(tab.title), \(tab.matchCountText)")
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
@@ -538,5 +557,50 @@ extension InspectorEntry {
         var label = "\(index): \(summary ?? preview)"
         if let parent { label += ", \(parent.description)" }
         return label
+    }
+}
+
+/// A tab's sort menu: Position, then its two value orders (Earliest or Latest
+/// first, A → Z or Z → A). It shows the order when the tab is sorted, and just
+/// its icon at Position.
+struct SortMenu: View {
+    let kind: SortKind
+    let order: EntryOrder
+    let choose: (EntryOrder) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(EntryOrder.allCases, id: \.self) { option in
+                Button {
+                    choose(option)
+                } label: {
+                    if option == order {
+                        Label(kind.title(of: option), systemImage: "checkmark")
+                    } else {
+                        Text(kind.title(of: option))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 10, weight: .semibold))
+                if order != .position {
+                    Text(kind.title(of: order))
+                }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(order == .position ? .secondary : .primary)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(Capsule().fill(Color.primary.opacity(order == .position ? 0 : 0.08)))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Sort: \(kind.title(of: order))")
+        .accessibilityLabel("Sort, \(kind.title(of: order))")
     }
 }

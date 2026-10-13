@@ -10,9 +10,14 @@ final class PanelModel {
     /// The current Inspection; its `selection` is the Inspector's selected entry.
     private(set) var inspection = Inspection(matches: [], tabs: [], selection: nil)
     /// Bumped whenever the Inspection's tabs change (a new inspection, a tab
-    /// moved), not for a new selection: the row list rebuilds on it rather than
-    /// comparing every entry.
+    /// moved) or one is sorted, not for a new selection: the row list rebuilds on
+    /// it rather than comparing every entry.
     private(set) var tabsRevision = 0
+    /// How each tab lists its entries, until new text comes in (`apply(fresh:)`);
+    /// Position when not set.
+    private(set) var orders: [InspectorTab.ID: EntryOrder] = [:]
+    /// Each tab's entries in their order, worked out once per tabs revision.
+    @ObservationIgnored private var orderedIndices: (revision: Int, byTab: [InspectorTab.ID: [Int]]) = (-1, [:])
     /// A Panel setting: whether the Input shows tints and click behaviour.
     var highlighting = true {
         didSet { onHighlightingChange(highlighting) }
@@ -198,7 +203,10 @@ final class PanelModel {
     /// the user's tab order, with a selection, and the layout following the Config's.
     private func apply(_ next: Inspection, fresh: Bool, config: Config) {
         var next = next
-        if fresh { lastIndex = [:] }
+        if fresh {
+            lastIndex = [:]
+            orders = [:]
+        }
         if fresh || next.selection?.tab != inspection.selection?.tab { readsDatetimeAsUTC = false }
         next.tabs = arrangedTabs(next.tabs, order: tabOrder)
         if next.selection == nil { next.selection = next.tabs.first.map { EntryID(tab: $0.id, index: 0) } }
@@ -209,6 +217,29 @@ final class PanelModel {
         inspection = next
         tabsRevision += 1
         onInspectionChange(next)
+    }
+
+    /// How `tab` lists its entries.
+    func order(of tab: InspectorTab.ID) -> EntryOrder {
+        orders[tab] ?? .position
+    }
+
+    /// Sorts `tab`'s entries by `order`, keeping the selection.
+    func setOrder(_ order: EntryOrder, of tab: InspectorTab.ID) {
+        guard order != self.order(of: tab) else { return }
+        orders[tab] = order
+        tabsRevision += 1
+    }
+
+    /// `tab`'s entry indices in the order it lists them.
+    func orderedIndices(of tab: InspectorTab) -> [Int] {
+        let order = order(of: tab.id)
+        guard order != .position else { return Array(tab.entries.indices) }
+        if orderedIndices.revision != tabsRevision { orderedIndices = (tabsRevision, [:]) }
+        if let cached = orderedIndices.byTab[tab.id] { return cached }
+        let indices = tab.indices(in: order)
+        orderedIndices.byTab[tab.id] = indices
+        return indices
     }
 
     /// Drags the Pattern tab named `name` to `index` among the Pattern tabs, and

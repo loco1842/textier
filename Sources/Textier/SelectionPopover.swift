@@ -313,9 +313,23 @@ final class SelectionPopoverModel {
         if openRow != nil, openRow == inspector.inspection.selection { closeOpenRow() } else { openSelection() }
     }
 
+    /// Sorts the filtered Pattern's rows by `order` (the Inspector's order for
+    /// its tab), keeping the selection.
+    func sort(_ order: EntryOrder) {
+        guard let filter else { return }
+        inspector.setOrder(order, of: filter)
+        updateRows()
+    }
+
     private func updateRows() {
         // Plain Text's pieces only under its own chip: unfiltered, the list is Matches.
-        let shown = filter.map { tab in allRows.filter { $0.tab.id == tab } } ?? allRows.filter { $0.tab.id != .plainText }
+        // One Pattern's rows come in its tab's order, which may be sorted.
+        let shown: [Row]
+        if let filter, let tab = inspector.inspection.tab(filter), inspector.order(of: filter) != .position {
+            shown = inspector.orderedIndices(of: tab).map { Row(id: EntryID(tab: filter, index: $0), entry: tab.entries[$0], tab: tab) }
+        } else {
+            shown = filter.map { tab in allRows.filter { $0.tab.id == tab } } ?? allRows.filter { $0.tab.id != .plainText }
+        }
         rows = Array(shown.prefix(Self.largestList))
         hiddenRowCount = shown.count - rows.count
         // A filter whose Pattern is gone shows everything again.
@@ -587,6 +601,15 @@ private struct FilterBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
+        }
+        .overlay(alignment: .trailing) {
+            // One Pattern's chip on: its rows can be sorted.
+            if let filter = model.filter, let tab = model.inspector.inspection.tab(filter), let kind = tab.sortKind {
+                SortMenu(kind: kind, order: model.inspector.order(of: filter)) { model.sort($0) }
+                    .padding(.horizontal, 6)
+                    .background(.background.opacity(0.9), in: Capsule())
+                    .padding(.trailing, 6)
+            }
         }
         .animation(reduceMotion ? nil : .spring(duration: 0.25), value: model.filter)
     }

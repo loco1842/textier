@@ -60,9 +60,9 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
     private let model: PanelModel
     private var state: State?
     private(set) var rows: [Row] = []
-    /// Where each tab's first entry row is (its header is the row before, in the
-    /// list layout); nil for a tab whose entries aren't rows.
-    private var firstEntryRow: [Int?] = []
+    /// Each tab's entries' rows, by entry index; nil for a tab whose entries
+    /// aren't rows. A sorted tab's rows aren't in index order.
+    private var entryRows: [[Int]?] = []
     /// Set while the list follows the model, so the table's own selection change
     /// isn't sent back to it.
     private var isFollowing = false
@@ -129,20 +129,26 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
     private func rebuildRows(_ state: State) {
         let tabs = model.inspection.tabs
         rows = []
-        firstEntryRow = Array(repeating: nil, count: tabs.count)
+        entryRows = Array(repeating: nil, count: tabs.count)
+        func appendEntries(of tab: Int) {
+            var byEntry = Array(repeating: 0, count: tabs[tab].entries.count)
+            for index in model.orderedIndices(of: tabs[tab]) {
+                byEntry[index] = rows.count
+                rows.append(.entry(tab: tab, index: index))
+            }
+            entryRows[tab] = byEntry
+        }
         switch state.layout {
         case .tabs:
             guard let shown = state.shownTab ?? tabs.first?.id, let tab = tabs.firstIndex(where: { $0.id == shown })
             else { return }
-            firstEntryRow[tab] = 0
-            rows = tabs[tab].entries.indices.map { .entry(tab: tab, index: $0) }
+            appendEntries(of: tab)
         case .list:
             rows.reserveCapacity(tabs.reduce(tabs.count) { $0 + $1.entries.count })
             for (tab, group) in tabs.enumerated() {
                 rows.append(.header(tab: tab))
                 guard !state.collapsed.contains(group.id) else { continue }
-                firstEntryRow[tab] = rows.count
-                rows.append(contentsOf: group.entries.indices.map { .entry(tab: tab, index: $0) })
+                appendEntries(of: tab)
             }
         }
     }
@@ -156,10 +162,9 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
     /// The row showing entry `id`, when it's one.
     private func row(of id: EntryID) -> Int? {
         let tabs = model.inspection.tabs
-        guard let tab = tabs.firstIndex(where: { $0.id == id.tab }), let first = firstEntryRow[safe: tab] ?? nil,
-              tabs[tab].entries.indices.contains(id.index)
+        guard let tab = tabs.firstIndex(where: { $0.id == id.tab }), let byEntry = entryRows[safe: tab] ?? nil
         else { return nil }
-        return first + id.index
+        return byEntry[safe: id.index]
     }
 
     private func entryID(at row: Int) -> EntryID? {
@@ -212,7 +217,8 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
                 isExpanded: Binding(
                     get: { [weak model] in !(model?.isCollapsed(id) ?? false) },
                     set: { [weak model] in model?.setCollapsed(id, !$0) }
-                )
+                ),
+                sorting: (model.order(of: id), { [weak model] in model?.setOrder($0, of: id) })
             )
             return cell
         case .entry(let tab, let index):
