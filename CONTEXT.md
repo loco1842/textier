@@ -37,7 +37,7 @@ A named capture in a Pattern's regex (`%{IP:client}` or `(?<client>…)`): a lab
 _Avoid_: Capture, group, attribute
 
 **Match**:
-One region of the Input that a Pattern detected. A Match is highlighted and offers Actions.
+One region of the Input that a Pattern detected. A Match is highlighted and offers Actions. In the text a click is a plain text click; ⌘-click (the modifier can be changed) on a Match selects it in the Inspector.
 _Avoid_: Segment, token, hit, highlight
 
 **Color Rule**:
@@ -59,7 +59,7 @@ _Avoid_: Command, operation
 ## Surfaces
 
 **Panel**:
-textier's main window, for longer work on a text, opened from the Selection Popover (or by the shortcut when the menu bar icon is out of sight): a regular window with close, minimize and full screen buttons. It holds the editable Input, with its Matches highlighted, beside the Inspector. It takes an Input of up to 100 MB; a bigger one is refused, and the Input stays as it was.
+textier's main window, for longer work on a text, opened from the Selection Popover (or by the shortcut when the menu bar icon is out of sight): a regular window with close, minimize and full screen buttons. It holds the editable Input, with its Matches highlighted, beside the Inspector. It takes an Input of up to 100 MB; a bigger one is refused, and the Input stays as it was. Go to Line (⌘G) moves the cursor to a line, or a line and column, of the Input.
 _Avoid_: Popover, input window, main panel
 
 **Selection Popover**:
@@ -67,7 +67,7 @@ What the global shortcut opens under textier's menu bar icon, for quick work on 
 _Avoid_: Clipboard Popover, menu, menu bar window, mini Panel
 
 **Inspector**:
-The side of the Panel that lists every Match in the Input, nested ones included, grouped by Pattern name (one tab per name, or one list with a collapsible section per name), and shows the selected Match parsed.
+The side of the Panel that lists every Match in the Input, nested ones included, grouped by Pattern name (one tab per name, or one list with a collapsible section per name), and shows the selected Match parsed. Each group lists its Matches in the order they come in the Input, or sorted by value: a datetime by the instant it means (earliest or latest first), a file path by path then line, anything else by its text (A→Z or Z→A, numbers as numbers). A sort lasts until new text comes in (a capture, a paste over everything); edits keep it. Plain Text keeps its order.
 _Avoid_: Right panel, detail pane, sidebar, match list
 
 **Match Window**:
@@ -75,7 +75,7 @@ An Inspector view of one Match, popped out into a window of its own so it can st
 _Avoid_: Detail window, child window, viewer window, pop-out
 
 **Settings**:
-The window for changing what the config file holds: the shortcut, the editor, appearance, the Patterns and the Grok Definitions. The config file stays the source of truth, so editing it by hand still works.
+The window for changing what the config file holds: the shortcuts (the global one, and each command's in the app), the editor, appearance, the Patterns and the Grok Definitions. The config file stays the source of truth, so editing it by hand still works.
 _Avoid_: Preferences, config UI, options
 
 **JSON Viewer**:
