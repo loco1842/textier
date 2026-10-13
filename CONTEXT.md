@@ -59,7 +59,7 @@ _Avoid_: Command, operation
 ## Surfaces
 
 **Panel**:
-textier's main window, for longer work on a text, opened from the Selection Popover (or by the shortcut when the menu bar icon is out of sight): a regular window with close, minimize and full screen buttons. It holds the editable Input, with its Matches highlighted, beside the Inspector.
+textier's main window, for longer work on a text, opened from the Selection Popover (or by the shortcut when the menu bar icon is out of sight): a regular window with close, minimize and full screen buttons. It holds the editable Input, with its Matches highlighted, beside the Inspector. It takes an Input of up to 100 MB; a bigger one is refused, and the Input stays as it was.
 _Avoid_: Popover, input window, main panel
 
 **Selection Popover**:
