@@ -13,7 +13,7 @@ struct DetailParser {
     /// `pairedLine` is the line a file path takes from its JSON object's `line` key;
     /// the path's own `:line` wins. `fileExists` is asked about file paths, after
     /// `~/` expansion.
-    func detail(of match: Match, pairedLine: Int? = nil, fileExists: (String) -> Bool) -> Detail {
+    func detail(of match: Match, pairedLine: Int? = nil, fileExists: @Sendable (String) -> Bool) -> Detail {
         let parsed: Detail? = switch config.pattern(of: match)?.kind {
         case .builtin(.json): JSONValue.container(from: match.text).map(Detail.json)
         case .builtin(.escapedJSON): nil

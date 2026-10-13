@@ -119,3 +119,5 @@ Open questions:
 | 1. Colors cached, selection recolors two ranges | 100k | 10.46 s | 15.20 s | 6.47 s | 2.46 s | 22.28 s | — |
 | 2. Inspector list on NSTableView | 10k | — | 1.40 s | 0.14 s | 0.20 s | 1.41 s | 136 MB |
 | 2. Inspector list on NSTableView | 100k | — | 10.64 s | 0.09 s | 2.44 s | 14.02 s | 183 MB |
+| 3. Datetimes by arithmetic, entries and Plain Text built on every core | 10k | 0.40 s | 0.74 s | 0.13 s | 0.22 s | 0.71 s | 136 MB |
+| 3. Datetimes by arithmetic, entries and Plain Text built on every core | 100k | 2.90 s | 4.36 s | 0.08 s | 2.20 s | 5.92 s | — |

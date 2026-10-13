@@ -289,7 +289,7 @@ public struct FilePathDetail: Sendable, Equatable {
 public func inspect(
     _ input: String, config: Config, previous: Inspection? = nil, now: Date, timeZone: TimeZone,
     homeDirectory: String = NSHomeDirectory(), timeLimit: Duration = Pattern.timeLimit,
-    isCancelled: @escaping @Sendable () -> Bool = { false }, fileExists: (String) -> Bool
+    isCancelled: @escaping @Sendable () -> Bool = { false }, fileExists: @Sendable (String) -> Bool
 ) -> Inspection {
     let budget = MatchingBudget(timeLimit: timeLimit, isCancelled: isCancelled)
     // A cancelled inspection's result is never used: it stops at the next check.
@@ -302,44 +302,64 @@ public func inspect(
 
     // Pre-order is position order: a Match starts no later than its children, and
     // siblings follow one another. Tabs are created in first-appearance order.
+    // First each Match's place (its tab, its index there, its parent's tag) in that
+    // order; then what each one costs to work out (its detail, preview and
+    // Summary), on every core; then the entries, with their Fields' links, whose
+    // matching shares the time limit's budget.
     var tabs: [InspectorTab] = []
-    func append(_ match: Match, parent: ParentTag?) -> ParentTag {
+    var tabIndex: [InspectorTab.ID: Int] = [:]
+    var tabCounts: [Int] = []
+    var slots: [EntrySlot] = []
+    func place(_ match: Match, parent: ParentTag?) -> ParentTag {
         let id = InspectorTab.ID.pattern(match.patternName)
-        if !tabs.contains(where: { $0.id == id }) {
+        let tab = tabIndex[id] ?? {
             tabs.append(InspectorTab(
                 id: id, title: match.patternName, color: config.color(ofName: match.patternName),
                 glyph: config.glyph(ofName: match.patternName),
                 entries: []
             ))
+            tabIndex[id] = tabs.count - 1
+            tabCounts.append(0)
+            return tabs.count - 1
+        }()
+        let index = tabCounts[tab]
+        tabCounts[tab] += 1
+        slots.append(EntrySlot(match: match, parent: parent, tab: tab, index: index))
+        return ParentTag(patternName: match.patternName, index: index)
+    }
+    func placeNested(_ children: [Match], in topLevel: ParentTag) {
+        for child in children {
+            _ = place(child, parent: topLevel)
+            placeNested(child.children, in: topLevel)
         }
-        let tab = tabs.firstIndex { $0.id == id }!
-        let index = tabs[tab].entries.count
+    }
+    for (position, match) in matches.enumerated() {
+        if position % 256 == 255, budget.isCancelled() { return cancelled }
+        placeNested(match.children, in: place(match, parent: nil))
+    }
+
+    let parsed = slots.concurrentMap { slot -> ParsedEntry in
+        let match = slot.match
         let detail = parser.detail(of: match, pairedLine: linesByRange[match.range], fileExists: fileExists)
         let preview = if case .filePath(let file) = detail, file.lineSource == .lineKey, let line = file.line {
             preview(of: "\(match.text):\(line)", keepingEnd: true)
         } else {
             preview(of: match.text)
         }
+        let summary = summary(of: detail, fields: match.fields, text: match.text, now: now, timeZone: timeZone)
+        return ParsedEntry(detail: detail, preview: preview, summary: summary)
+    }
+    if budget.isCancelled() { return cancelled }
+
+    for (slot, parsed) in zip(slots, parsed) {
+        let match = slot.match
         let fields = match.fields.map {
             FieldEntry(field: $0, link: stringValueMatch($0.value, config: config, budget: budget))
         }
-        tabs[tab].entries.append(InspectorEntry(
-            index: index, preview: preview, range: match.range, text: match.text, actions: match.actions,
-            parent: parent, fields: fields, detail: detail,
-            summary: summary(of: detail, fields: match.fields, text: match.text, now: now, timeZone: timeZone),
-            color: match.color
+        tabs[slot.tab].entries.append(InspectorEntry(
+            index: slot.index, preview: parsed.preview, range: match.range, text: match.text, actions: match.actions,
+            parent: slot.parent, fields: fields, detail: parsed.detail, summary: parsed.summary, color: match.color
         ))
-        return ParentTag(patternName: match.patternName, index: index)
-    }
-    func appendNested(_ children: [Match], in topLevel: ParentTag) {
-        for child in children {
-            _ = append(child, parent: topLevel)
-            appendNested(child.children, in: topLevel)
-        }
-    }
-    for (position, match) in matches.enumerated() {
-        if position % 256 == 255, budget.isCancelled() { return cancelled }
-        appendNested(match.children, in: append(match, parent: nil))
     }
 
     if let previous {
@@ -353,6 +373,22 @@ public func inspect(
     var inspection = Inspection(matches: matches, tabs: tabs, selection: nil, slowPatterns: budget.stopped)
     inspection.selection = inspection.selection(keeping: previous)
     return inspection
+}
+
+/// A Match's place among the entries: its tab, its index there, and the top-level
+/// Match it's nested in.
+private struct EntrySlot: Sendable {
+    var match: Match
+    var parent: ParentTag?
+    var tab: Int
+    var index: Int
+}
+
+/// What an entry costs to work out from its Match.
+private struct ParsedEntry: Sendable {
+    var detail: Detail
+    var preview: String
+    var summary: Summary?
 }
 
 extension InspectorEntry {
@@ -479,15 +515,20 @@ private func plainTextEntries(in input: String, between matches: [Match]) -> [In
     }
     gaps.append(NSRange(location: start, length: text.length - start))
 
+    // Each gap trimmed, read and previewed on every core; the text is only read.
+    nonisolated(unsafe) let shared = text
+    let pieces = gaps.concurrentMap { gap -> (range: NSRange, text: String, preview: String)? in
+        let range = trimmed(gap, in: shared)
+        guard range.length > 0 else { return nil }
+        let piece = shared.substring(with: range)
+        guard piece.unicodeScalars.contains(where: { !ignorable.contains($0) }) else { return nil }
+        return (range, piece, preview(of: piece))
+    }
     var entries: [InspectorEntry] = []
-    for gap in gaps {
-        let range = trimmed(gap, in: text)
-        guard range.length > 0 else { continue }
-        let piece = text.substring(with: range)
-        guard piece.unicodeScalars.contains(where: { !ignorable.contains($0) }) else { continue }
+    for case let piece? in pieces {
         entries.append(InspectorEntry(
-            index: entries.count, preview: preview(of: piece), range: range, text: piece, actions: [.copy],
-            parent: nil, detail: .text(piece)
+            index: entries.count, preview: piece.preview, range: piece.range, text: piece.text, actions: [.copy],
+            parent: nil, detail: .text(piece.text)
         ))
     }
     return entries

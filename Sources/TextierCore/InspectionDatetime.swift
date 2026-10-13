@@ -33,7 +33,7 @@ func datetimeDetail(_ text: String, now: Date, timeZone: TimeZone) -> DatetimeDe
 /// The fields of a written datetime, before any time zone is applied. A `datetime`
 /// Pattern's regex may match digits other than ASCII ones (ICU's `\d` does); text
 /// with those isn't read.
-private struct WrittenDatetime {
+struct WrittenDatetime {
     private static let format = try! NSRegularExpression(
         pattern: #"^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:[T ]([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]+))?)?(Z|[+-][0-9]{2}:?[0-9]{2})?)?$"#
     )
@@ -76,8 +76,29 @@ private struct WrittenDatetime {
         }
     }
 
-    /// Milliseconds since the epoch when the fields are read as wall time in `zone`.
+    /// Milliseconds since the epoch when the fields are read as wall time in `zone`:
+    /// by arithmetic (`CivilTime`), or with a `Calendar` for what it can't be sure
+    /// of (a field out of range, a year before 1600, a time near a daylight saving
+    /// change).
     func milliseconds(in zone: TimeZone) -> Int64? {
+        let millis = Int64((fraction ?? "").prefix(3).padding(toLength: 3, withPad: "0", startingAt: 0)) ?? 0
+        if let seconds = fastSeconds(in: zone) { return seconds * 1000 + millis }
+        return calendarMilliseconds(in: zone)
+    }
+
+    private func fastSeconds(in zone: TimeZone) -> Int64? {
+        guard let year = fields.year, let month = fields.month, let day = fields.day, let hour = fields.hour,
+              let minute = fields.minute, let second = fields.second,
+              CivilTime.years.contains(Int64(year)), (1...12).contains(month), (1...31).contains(day),
+              (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second)
+        else { return nil }
+        let days = CivilTime.days(year: Int64(year), month: Int64(month), day: Int64(day))
+        let naive = days * 86_400 + Int64(hour * 3600 + minute * 60 + second)
+        return CivilTime.instant(ofWallTime: naive, in: zone)
+    }
+
+    /// `milliseconds(in:)` with a `Calendar`.
+    func calendarMilliseconds(in zone: TimeZone) -> Int64? {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         guard let date = calendar.date(from: fields) else { return nil }
@@ -107,7 +128,17 @@ extension DatetimeConversions {
 }
 
 /// `2026-10-07T04:17:10[.123]` for the UTC wall time `milliseconds` after the epoch.
-private func wallTime(_ milliseconds: Int64, fractional: Bool) -> String {
+func wallTime(_ milliseconds: Int64, fractional: Bool) -> String {
+    let seconds = floorDivision(milliseconds, 1000)
+    guard let wall = CivilTime.wallTime(seconds: seconds) else { return calendarWallTime(milliseconds, fractional: fractional) }
+    var text = CivilTime.dateText(year: wall.year, month: wall.month, day: wall.day) + "T"
+        + CivilTime.timeText(secondOfDay: wall.secondOfDay)
+    if fractional { text += "." + CivilTime.padded(milliseconds - seconds * 1000, 3) }
+    return text
+}
+
+/// `wallTime` with a `Calendar`, for years `CivilTime` doesn't cover.
+func calendarWallTime(_ milliseconds: Int64, fractional: Bool) -> String {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let seconds = floorDivision(milliseconds, 1000)
@@ -124,8 +155,8 @@ private func wallTime(_ milliseconds: Int64, fractional: Bool) -> String {
 
 /// `+07:00`, `-03:30`, `+00:00`.
 private func offsetText(_ seconds: Int) -> String {
-    let minutes = abs(seconds) / 60
-    return String(format: "%@%02d:%02d", seconds < 0 ? "-" : "+", minutes / 60, minutes % 60)
+    let minutes = Int64(abs(seconds) / 60)
+    return (seconds < 0 ? "-" : "+") + CivilTime.padded(minutes / 60, 2) + ":" + CivilTime.padded(minutes % 60, 2)
 }
 
 /// English, rounded down to the largest whole unit: "just now" under a minute,
@@ -142,7 +173,3 @@ private func relativeTime(seconds: Int64) -> String {
     return seconds > 0 ? amount + " ago" : "in " + amount
 }
 
-private func floorDivision(_ value: Int64, _ divisor: Int64) -> Int64 {
-    let quotient = value / divisor
-    return value % divisor < 0 ? quotient - 1 : quotient
-}

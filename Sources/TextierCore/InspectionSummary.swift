@@ -49,6 +49,21 @@ extension DatetimeConversions {
     /// `11:17:10 · 2 hours ago`, with `2026-10-07 ` first when the instant isn't
     /// on today's date in `timeZone`.
     func summary(now: Date, timeZone: TimeZone) -> String {
+        // By arithmetic (`CivilTime`); with a `Calendar` outside the years it covers.
+        func local(_ date: Date) -> (year: Int64, month: Int64, day: Int64, secondOfDay: Int64, dayNumber: Int64)? {
+            let seconds = Int64(date.timeIntervalSince1970.rounded(.down))
+            return CivilTime.wallTime(seconds: seconds + Int64(timeZone.secondsFromGMT(for: date)))
+        }
+        guard let wall = local(instant), let today = local(now) else { return calendarSummary(now: now, timeZone: timeZone) }
+        let time = CivilTime.timeText(secondOfDay: wall.secondOfDay)
+        let wallTime = wall.dayNumber == today.dayNumber
+            ? time
+            : CivilTime.dateText(year: wall.year, month: wall.month, day: wall.day) + " " + time
+        return wallTime + " · " + relative
+    }
+
+    /// `summary` with a `Calendar`.
+    func calendarSummary(now: Date, timeZone: TimeZone) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: instant)
