@@ -121,17 +121,21 @@ final class SettingsModel {
     /// otherwise kept as a draft saying why not.
     func recordShortcut(modifiers: Shortcut.Modifiers, key: String) {
         if let shortcut = Shortcut(modifiers: modifiers, key: key) {
-            if let command = config.shortcuts.command(for: shortcut) {
-                keepDraft(.shortcut, text: shortcut.symbols, problem: "\(shortcut.symbols) is already \(command.title)")
+            if let problem = config.shortcuts.problem(withGlobal: shortcut) {
+                keepDraft(.shortcut, text: shortcut.symbolText, problem: problem)
             } else {
                 setShortcut(shortcut)
             }
             return
         }
-        let problem = Shortcut.keys.contains(key)
+        keepDraft(.shortcut, text: Shortcut.symbols(modifiers: modifiers, key: key), problem: Self.problem(withKey: key))
+    }
+
+    /// Why a key press isn't a Shortcut.
+    private static func problem(withKey key: String) -> String {
+        Shortcut.keys.contains(key)
             ? "Add ⌃, ⌥ or ⌘, so the shortcut doesn't take over typing"
             : "A shortcut's key is a letter, a digit, punctuation, F1–F12 or Space"
-        keepDraft(.shortcut, text: Shortcut.symbols(modifiers: modifiers, key: key), problem: problem)
     }
 
     func setShortcut(_ shortcut: Shortcut) {
@@ -181,13 +185,10 @@ final class SettingsModel {
     func recordShortcut(for command: ShortcutCommand, modifiers: Shortcut.Modifiers, key: String) {
         let setting = Setting.commandShortcut(command)
         guard let shortcut = Shortcut(modifiers: modifiers, key: key) else {
-            let problem = Shortcut.keys.contains(key)
-                ? "Add ⌃, ⌥ or ⌘, so the shortcut doesn't take over typing"
-                : "A shortcut's key is a letter, a digit, punctuation, F1–F12 or Space"
-            return keepDraft(setting, text: Shortcut.symbols(modifiers: modifiers, key: key), problem: problem)
+            return keepDraft(setting, text: Shortcut.symbols(modifiers: modifiers, key: key), problem: Self.problem(withKey: key))
         }
         if let problem = config.shortcuts.problem(with: shortcut, for: command, global: config.shortcut) {
-            return keepDraft(setting, text: shortcut.symbols, problem: problem)
+            return keepDraft(setting, text: shortcut.symbolText, problem: problem)
         }
         apply(clearing: setting) { $0.shortcuts[command] = shortcut }
     }
@@ -203,14 +204,27 @@ final class SettingsModel {
         recordShortcut(for: command, modifiers: shortcut.modifiers, key: shortcut.key)
     }
 
-    /// Every command's default shortcut and modifiers again; the global one stays.
+    /// Every command's default shortcut and modifiers again; the global one stays,
+    /// and a command whose default it is is left without one.
     func restoreDefaultShortcuts() {
         for command in ShortcutCommand.allCases { drafts[.commandShortcut(command)] = nil }
-        apply { $0.shortcuts = .default }
+        apply { $0.shortcuts = .defaults(global: $0.shortcut) }
     }
 
+    /// Ignored when a command or the global shortcut is `modifiers` with a digit
+    /// (the picker doesn't offer those).
     func setSelectTabModifiers(_ modifiers: Shortcut.Modifiers) {
+        guard config.shortcuts.canSelectTabs(with: modifiers, global: config.shortcut) else { return }
         apply { $0.shortcuts.selectTab = modifiers }
+    }
+
+    /// The modifiers Settings offers for the tab digits: those no shortcut uses
+    /// with a digit, and the current ones.
+    func selectTabChoices() -> [Shortcut.Modifiers] {
+        let current = config.shortcuts.selectTab
+        return modifierChoices(including: current).filter {
+            $0 == current || config.shortcuts.canSelectTabs(with: $0, global: config.shortcut)
+        }
     }
 
     func setMatchClickModifiers(_ modifiers: Shortcut.Modifiers) {
@@ -325,9 +339,6 @@ final class SettingsModel {
 }
 
 extension Shortcut {
-    /// How macOS menus write it: ⌃⌥T.
-    var symbols: String { symbolText }
-
     /// The symbols for a key press, whether or not it makes a Shortcut.
     static func symbols(modifiers: Modifiers, key: String) -> String {
         symbols(of: modifiers) + (key == "space" ? "Space" : key.uppercased())

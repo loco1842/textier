@@ -122,9 +122,19 @@ func detect(
     var candidates: [Candidate] = []
     var previous: (order: Int, end: Int)?
     for (job, found) in zip(jobs, found) {
+        var found = found
+        // The chunk before ended in a Match that runs on into this chunk: one search
+        // of the whole text would go on from that Match's end, so this chunk is
+        // searched again from there (its own search may have found a Match starting
+        // inside that one and running over one starting after it).
+        if let previous, previous.order == job.order, let chunk = job.chunk, previous.end > chunk.location {
+            let rest = NSMaxRange(chunk) - previous.end
+            found = rest <= 0 || budget.isCancelled() ? FoundMatches() : matches(
+                of: job.pattern, at: job.order, in: input, chunk: NSRange(location: previous.end, length: rest),
+                grok: config.grok, budget: budget
+            )
+        }
         for match in found.matches where match.range.length > 0 {
-            // A chunk's search runs a little past its end, so a Match the chunk
-            // before it ended inside this one isn't followed by one starting inside it.
             if let previous, previous.order == job.order, match.range.location < previous.end { continue }
             candidates.append(Candidate(range: match.range, order: job.order, pattern: job.pattern, fields: match.fields))
             previous = (job.order, NSMaxRange(match.range))
@@ -160,8 +170,12 @@ private struct MatchingJob: Sendable {
 }
 
 /// How far past its end a chunk's search runs, so a Match that starts in the
-/// chunk and runs on past its end is found whole.
-let chunkOverlap = 4096
+/// chunk and runs on past its end is found whole. A Match running further than
+/// this past its chunk's end (a multi-line one over 64 KB, in a text of 512 KB or
+/// more) may be cut short or missed. Searching on to the text's end would find
+/// it, but a Pattern with no Matches left would then read the rest of the text
+/// once per chunk.
+let chunkOverlap = 65_536
 
 /// The text cut at line ends into chunks for several cores to match at once, or
 /// one chunk for a text too short to be worth cutting. `size` (in UTF-16 units)

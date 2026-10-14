@@ -39,7 +39,7 @@ final class MatchWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         super.init()
-        (window as? KeyEquivalentWindow)?.onKeyEquivalent = { [weak self] in self?.handle($0) ?? false }
+        (window as? KeyEquivalentWindow)?.onKeyEquivalent = { [weak self] in self?.goToLine(on: $0) ?? false }
         // The title stays set for the Window menu and VoiceOver; the header shows it.
         window.title = "textier — \(model.patternName)"
         window.titleVisibility = .hidden
@@ -66,7 +66,7 @@ final class MatchWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Go to Line's shortcut (⌘G): the Raw editor's bar, switching to Raw first.
-    private func handle(_ event: NSEvent) -> Bool {
+    private func goToLine(on event: NSEvent) -> Bool {
         guard let shortcut = Shortcut(event: event), shortcut == AppConfig.current.shortcuts[.goToLine] else { return false }
         if let editor = rawEditor, model.mode == .raw {
             GoToLineBar.show(for: editor)

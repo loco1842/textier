@@ -135,8 +135,6 @@ final class PanelController: NSObject, NSTextViewDelegate, NSSplitViewDelegate {
         return scrollView
     }
 
-    /// A click on a Match: selects it in the Inspector, leaving the cursor where the
-    /// click put it rather than selecting the Match's text, so a click still edits there.
     /// A ⌘-click on a Match: selected in the Inspector, its text selected in the
     /// Input (so ⌘C copies it).
     private func open(_ match: Match) {

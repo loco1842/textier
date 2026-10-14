@@ -520,7 +520,6 @@ public enum ConfigFile {
             && digits.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) || ("A"..."F").contains($0) }
     }
 
-    /// The value of `key` among an object's entries; a repeated key's last value wins.
     /// The `shortcuts` object as the file writes it, every command in order.
     private static func shortcutsObject(_ shortcuts: CommandShortcuts) -> String {
         let commands = ShortcutCommand.allCases.map { "\(quote($0.rawValue)): \(quote(shortcuts[$0]?.description ?? ""))" }
@@ -576,6 +575,7 @@ public enum ConfigFile {
         return checked
     }
 
+    /// The value of `key` among an object's entries; a repeated key's last value wins.
     private static func field(_ key: String, in entries: [JSONEntry]) -> JSONValue? {
         entries.last { $0.key == key }?.value
     }

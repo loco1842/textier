@@ -60,6 +60,9 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
     private let model: PanelModel
     private var state: State?
     private(set) var rows: [Row] = []
+    /// The tabs `rows` were built from. The table reads these, not the model's,
+    /// which may already hold a newer inspection the rows don't describe yet.
+    private var tabs: [InspectorTab] = []
     /// Each tab's entries' rows, by entry index; nil for a tab whose entries
     /// aren't rows. A sorted tab's rows aren't in index order.
     private var entryRows: [[Int]?] = []
@@ -127,7 +130,7 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
     }
 
     private func rebuildRows(_ state: State) {
-        let tabs = model.inspection.tabs
+        tabs = model.inspection.tabs
         rows = []
         entryRows = Array(repeating: nil, count: tabs.count)
         func appendEntries(of tab: Int) {
@@ -161,7 +164,6 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
 
     /// The row showing entry `id`, when it's one.
     private func row(of id: EntryID) -> Int? {
-        let tabs = model.inspection.tabs
         guard let tab = tabs.firstIndex(where: { $0.id == id.tab }), let byEntry = entryRows[safe: tab] ?? nil
         else { return nil }
         return byEntry[safe: id.index]
@@ -169,7 +171,7 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
 
     private func entryID(at row: Int) -> EntryID? {
         guard case .entry(let tab, let index) = rows[safe: row] else { return nil }
-        return EntryID(tab: model.inspection.tabs[tab].id, index: index)
+        return EntryID(tab: tabs[tab].id, index: index)
     }
 
     // MARK: Data source and delegate
@@ -179,7 +181,7 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         switch rows[row] {
         case .header: SectionHeader.height + 2
-        case .entry(let tab, let index): EntryRow.height(of: model.inspection.tabs[tab].entries[index])
+        case .entry(let tab, let index): EntryRow.height(of: tabs[tab].entries[index])
         }
     }
 
@@ -197,7 +199,7 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
         view.identifier = EntryRowView.identifier
         view.hasFocusRing = { [weak self] in self?.state?.listHasFocus ?? false }
         if case .entry(let tab, let index) = rows[row] {
-            let group = model.inspection.tabs[tab]
+            let group = tabs[tab]
             view.color = group.entries[index].color ?? model.color(of: group)
         } else {
             view.color = nil
@@ -206,7 +208,6 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let tabs = model.inspection.tabs
         switch rows[row] {
         case .header(let tab):
             let group = tabs[tab]
@@ -247,7 +248,7 @@ final class EntryListController: NSObject, NSTableViewDataSource, NSTableViewDel
     /// A click on a header collapses or expands its group.
     @objc private func click() {
         guard case .header(let tab) = rows[safe: table.clickedRow] else { return }
-        let id = model.inspection.tabs[tab].id
+        let id = tabs[tab].id
         model.setCollapsed(id, !model.isCollapsed(id))
     }
 

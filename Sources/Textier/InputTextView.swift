@@ -16,7 +16,7 @@ import TextierCore
 final class InputTextView: OwnCopyTextView {
     var matches: [Match] = [] {
         didSet {
-            // An inspection describes the text as it is: the Panel and the Popover
+            // An inspection describes the text as it is: the Panel and the Selection Popover
             // drop one that started before an edit. So the range check is enough.
             let length = (string as NSString).length
             live = matches.filter { NSMaxRange($0.range) <= length }
@@ -154,7 +154,7 @@ final class InputTextView: OwnCopyTextView {
 
     /// The modifiers held changed: the pointing hand and the hovered pill follow.
     func updateModifiers(_ flags: NSEvent.ModifierFlags) {
-        let acting = highlighting && Shortcut.matches(AppConfig.current.shortcuts.matchClick, flags)
+        let acting = highlighting && Shortcut.areHeld(AppConfig.current.shortcuts.matchClick, in: flags)
         guard acting != isActingOnMatches else { return }
         isActingOnMatches = acting
         window?.invalidateCursorRects(for: self)

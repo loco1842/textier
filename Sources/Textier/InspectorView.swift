@@ -516,6 +516,13 @@ private struct ActionButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help(help)
+    }
+
+    /// Pop Out's tooltip has its shortcut, as the Config sets it.
+    private var help: String {
+        guard item == .popOut, let shortcut = AppConfig.store.config.shortcuts[.popOut] else { return item.title }
+        return "\(item.title) (\(shortcut.symbolText))"
     }
 }
 

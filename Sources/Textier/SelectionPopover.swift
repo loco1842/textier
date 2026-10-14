@@ -384,7 +384,7 @@ struct SelectionPopoverView: View {
     let openPanel: () -> Void
     let close: () -> Void
 
-    private var shortcut: String { AppConfig.store.config.shortcut.symbols }
+    private var shortcut: String { AppConfig.store.config.shortcut.symbolText }
 
     /// Room for an open JSON card (`MatchCard.tallest`) with the open row and four
     /// or five more under the header, preview and chips; 700 pt with the arrow and

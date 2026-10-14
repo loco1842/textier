@@ -28,14 +28,25 @@ enum ShortcutKeys {
 
     static let names: [Int: String] = Dictionary(uniqueKeysWithValues: codes.map { ($1, $0) })
 
+    /// Each modifier a Shortcut has, as AppKit and SwiftUI name it.
+    private static let modifierNames: [(Shortcut.Modifiers, NSEvent.ModifierFlags, SwiftUI.EventModifiers)] = [
+        (.control, .control, .control), (.option, .option, .option), (.shift, .shift, .shift),
+        (.command, .command, .command),
+    ]
+
     /// The modifiers of `flags` a Shortcut has; Caps Lock, Fn and the keypad aren't.
     static func modifiers(_ flags: NSEvent.ModifierFlags) -> Shortcut.Modifiers {
-        var modifiers: Shortcut.Modifiers = []
-        if flags.contains(.control) { modifiers.insert(.control) }
-        if flags.contains(.option) { modifiers.insert(.option) }
-        if flags.contains(.shift) { modifiers.insert(.shift) }
-        if flags.contains(.command) { modifiers.insert(.command) }
-        return modifiers
+        modifierNames.reduce(into: []) { if flags.contains($1.1) { $0.insert($1.0) } }
+    }
+
+    /// `modifiers` as AppKit's flags.
+    static func flags(_ modifiers: Shortcut.Modifiers) -> NSEvent.ModifierFlags {
+        modifierNames.reduce(into: []) { if modifiers.contains($1.0) { $0.insert($1.1) } }
+    }
+
+    /// `modifiers` as SwiftUI's.
+    static func eventModifiers(_ modifiers: Shortcut.Modifiers) -> SwiftUI.EventModifiers {
+        modifierNames.reduce(into: []) { if modifiers.contains($1.0) { $0.insert($1.2) } }
     }
 
     /// The key name of a key press: what it types with no modifiers (so a letter
@@ -59,27 +70,18 @@ extension Shortcut {
 
     /// For a menu item: its key equivalent and modifier mask.
     var keyEquivalent: (key: String, modifiers: NSEvent.ModifierFlags) {
-        var flags: NSEvent.ModifierFlags = []
-        if modifiers.contains(.control) { flags.insert(.control) }
-        if modifiers.contains(.option) { flags.insert(.option) }
-        if modifiers.contains(.shift) { flags.insert(.shift) }
-        if modifiers.contains(.command) { flags.insert(.command) }
         let key: String = switch self.key {
         case "space": " "
         case let name where name.hasPrefix("f") && name.count > 1:
             String(UnicodeScalar(NSF1FunctionKey + (Int(name.dropFirst()) ?? 1) - 1).map(Character.init) ?? " ")
         case let name: name
         }
-        return (key, flags)
+        return (key, ShortcutKeys.flags(modifiers))
     }
 
     /// For SwiftUI's `.keyboardShortcut`; nil for a function key, which it can't take.
     var swiftUI: KeyboardShortcut? {
-        var modifiers: SwiftUI.EventModifiers = []
-        if self.modifiers.contains(.control) { modifiers.insert(.control) }
-        if self.modifiers.contains(.option) { modifiers.insert(.option) }
-        if self.modifiers.contains(.shift) { modifiers.insert(.shift) }
-        if self.modifiers.contains(.command) { modifiers.insert(.command) }
+        let modifiers = ShortcutKeys.eventModifiers(self.modifiers)
         switch key {
         case "space": return KeyboardShortcut(.space, modifiers: modifiers)
         case let name where name.count == 1: return KeyboardShortcut(KeyEquivalent(Character(name)), modifiers: modifiers)
@@ -88,7 +90,7 @@ extension Shortcut {
     }
 
     /// Whether `flags` hold exactly these modifiers.
-    static func matches(_ modifiers: Modifiers, _ flags: NSEvent.ModifierFlags) -> Bool {
+    static func areHeld(_ modifiers: Modifiers, in flags: NSEvent.ModifierFlags) -> Bool {
         ShortcutKeys.modifiers(flags) == modifiers
     }
 }

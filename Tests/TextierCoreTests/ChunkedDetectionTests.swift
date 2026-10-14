@@ -47,6 +47,28 @@ struct ChunkedDetectionTests {
         #expect(detected(chunkSize: chunkSize) == whole)
     }
 
+    @Test func aMatchLongerThanTheOverlapIsFoundWhole() {
+        let block = "BEGIN\n" + String(repeating: "filler line\n", count: 600) + "END"
+        let text = Array(repeating: block, count: 4).joined(separator: "\n")
+        let config = Config(patterns: [Pattern(name: "block", regex: #"BEGIN[\s\S]*?END"#, actions: [.copy])])
+        let whole = detect(text, config: config, budget: MatchingBudget(timeLimit: .seconds(60)))
+        let chunked = detect(text, config: config, budget: MatchingBudget(timeLimit: .seconds(60)), chunkSize: 1000)
+        #expect(whole.count == 4)
+        #expect(chunked == whole)
+    }
+
+    @Test func aMatchRunningIntoTheNextChunkLeavesItsSearchWhereOneSearchWould() {
+        // Each "END tail" line starts a chunk. The block ends in it; one search goes
+        // on from there and finds "tail", where the chunk's own search found
+        // "D tail", which starts inside the block.
+        let text = String(repeating: "BEGIN\nxx\nEND tail\n", count: 50)
+        let config = Config(patterns: [Pattern(name: "p", regex: #"BEGIN[\s\S]*?END|D tail|tail"#, actions: [.copy])])
+        let whole = detect(text, config: config, budget: MatchingBudget(timeLimit: .seconds(60)))
+        let chunked = detect(text, config: config, budget: MatchingBudget(timeLimit: .seconds(60)), chunkSize: 7)
+        #expect(whole.count == 100)
+        #expect(chunked == whole)
+    }
+
     @Test func chunksEndAtLineEndsAndCoverTheText() {
         let text = Self.text as NSString
         let chunks = lineChunks(of: text, size: 500)

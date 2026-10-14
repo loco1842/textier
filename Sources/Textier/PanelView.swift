@@ -30,7 +30,7 @@ private struct PanelHeader: View {
 
     /// A button's tooltip, with its command's shortcut as the Config sets it.
     private func help(_ text: String, _ command: ShortcutCommand) -> String {
-        AppConfig.store.config.shortcuts[command].map { "\(text) (\($0.symbols))" } ?? text
+        AppConfig.store.config.shortcuts[command].map { "\(text) (\($0.symbolText))" } ?? text
     }
 
     /// "⌘-click", as the Config's Match click modifiers make it.

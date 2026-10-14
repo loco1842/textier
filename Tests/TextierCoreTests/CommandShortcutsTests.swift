@@ -70,4 +70,28 @@ struct CommandShortcutsTests {
         #expect(shortcuts.problem(with: Shortcut("cmd+3")!, for: .goToLine, global: .default) == "⌘3 selects tab 3")
         #expect(shortcuts.problem(with: Shortcut("ctrl+3")!, for: .goToLine, global: .default) == nil)
     }
+
+    @Test func theGlobalShortcutCantBeACommandsEditingsOrATabs() {
+        let shortcuts = CommandShortcuts.default
+        #expect(shortcuts.problem(withGlobal: Shortcut("cmd+g")!) == "⌘G is already Go to Line")
+        #expect(shortcuts.problem(withGlobal: Shortcut("cmd+c")!) == "⌘C is for editing text")
+        #expect(shortcuts.problem(withGlobal: Shortcut("cmd+f")!) == "⌘F is for editing text")
+        #expect(shortcuts.problem(withGlobal: Shortcut("cmd+1")!) == "⌘1 selects tab 1")
+        #expect(shortcuts.problem(withGlobal: Shortcut("ctrl+option+t")!) == nil)
+    }
+
+    @Test func tabModifiersThatAShortcutUsesWithADigitCantSelectTabs() {
+        var shortcuts = CommandShortcuts.default
+        shortcuts[.goToLine] = Shortcut("option+2")
+        #expect(!shortcuts.canSelectTabs(with: [.option], global: .default))
+        #expect(!shortcuts.canSelectTabs(with: [.control], global: Shortcut("ctrl+5")!))
+        #expect(shortcuts.canSelectTabs(with: [.control], global: .default))
+    }
+
+    @Test func theDefaultsLeaveOutWhatTheGlobalShortcutTook() {
+        let shortcuts = CommandShortcuts.defaults(global: Shortcut("cmd+g")!)
+        #expect(shortcuts[.goToLine] == nil)
+        #expect(shortcuts[.toggleHighlighting] == Shortcut("cmd+e"))
+        #expect(CommandShortcuts.defaults(global: .default) == .default)
+    }
 }

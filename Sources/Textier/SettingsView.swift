@@ -85,7 +85,7 @@ private struct GeneralSettings: View {
                 }
             }
         } footer: {
-            Text("The menu bar popover keeps the selection for its icon until the next one, or clears it this long after it closes.")
+            Text("The Selection Popover keeps the selection for its icon until the next one, or clears it this long after it closes.")
                 .foregroundStyle(.secondary)
         }
         Section {
@@ -132,10 +132,10 @@ private struct ShortcutsSettings: View {
                 }
             }
             if let draft = model.draft(.shortcut) {
-                DraftNote(draft: draft, fileValue: model.config.shortcut.symbols) { model.discardDraft(.shortcut) }
+                DraftNote(draft: draft, fileValue: model.config.shortcut.symbolText) { model.discardDraft(.shortcut) }
             }
         } footer: {
-            Text("Works in any app: opens the selected text in the menu bar popover.")
+            Text("Works in any app: opens the selected text in the Selection Popover.")
                 .foregroundStyle(.secondary)
         }
         Section("In textier") {
@@ -147,7 +147,7 @@ private struct ShortcutsSettings: View {
             Picker("Select tab 1–9", selection: Binding(
                 get: { model.config.shortcuts.selectTab }, set: { model.setSelectTabModifiers($0) }
             )) {
-                ForEach(model.modifierChoices(including: model.config.shortcuts.selectTab), id: \.rawValue) { modifiers in
+                ForEach(model.selectTabChoices(), id: \.rawValue) { modifiers in
                     Text(Shortcut.symbols(of: modifiers) + "1–9").tag(modifiers)
                 }
             }
@@ -183,12 +183,12 @@ private struct ShortcutsSettings: View {
                 Button { model.resetShortcut(of: command) } label: { Image(systemName: "arrow.counterclockwise") }
                     .buttonStyle(.borderless)
                     .disabled(shortcut == command.defaultShortcut)
-                    .help("Back to \(command.defaultShortcut?.symbols ?? "none")")
+                    .help("Back to \(command.defaultShortcut?.symbolText ?? "none")")
                     .accessibilityLabel("Default shortcut for \(command.title)")
             }
         }
         if let draft = model.draft(.commandShortcut(command)) {
-            DraftNote(draft: draft, fileValue: shortcut?.symbols ?? "none") {
+            DraftNote(draft: draft, fileValue: shortcut?.symbolText ?? "none") {
                 model.discardDraft(.commandShortcut(command))
             }
         }
@@ -232,7 +232,7 @@ private struct ShortcutRecorder: View {
 
     var body: some View {
         Button(action: { monitor == nil ? start() : stop() }) {
-            Text(monitor != nil ? "Type the shortcut…" : draft?.text ?? shortcut?.symbols ?? "None")
+            Text(monitor != nil ? "Type the shortcut…" : draft?.text ?? shortcut?.symbolText ?? "None")
                 .frame(minWidth: 120)
         }
         .help("Click, then press the shortcut")

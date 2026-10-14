@@ -78,7 +78,10 @@ final class GoToLineBar: NSObject, NSTextFieldDelegate {
             return
         }
         let text = textView.string as NSString
-        let location = target.location(lineStarts: lineStarts, length: text.length)
+        var location = target.location(lineStarts: lineStarts, length: text.length)
+        // A line ending in CR LF ends before the CR, not between the two.
+        if location > 0, location < text.length, text.character(at: location) == 0x0A,
+           text.character(at: location - 1) == 0x0D { location -= 1 }
         close()
         textView.window?.makeFirstResponder(textView)
         textView.setSelectedRange(NSRange(location: location, length: 0))
@@ -91,7 +94,8 @@ final class GoToLineBar: NSObject, NSTextFieldDelegate {
 
     /// Scrolls `textView` so the line at `location` is in the middle of its view.
     private func center(_ location: Int, in textView: NSTextView) {
-        guard let layoutManager = textView.layoutManager, let scrollView = textView.enclosingScrollView else {
+        guard let layoutManager = textView.layoutManager, let scrollView = textView.enclosingScrollView,
+              (textView.string as NSString).length > 0 else {
             return textView.scrollRangeToVisible(NSRange(location: location, length: 0))
         }
         let glyph = layoutManager.glyphIndexForCharacter(at: min(location, max(0, (textView.string as NSString).length - 1)))
