@@ -337,6 +337,37 @@ extension AppTests {
 
         // MARK: The card's Raw
 
+        @Test func foldingInTheCardsRawDoesntBounceTheText() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                app.capture(AppFixtures.monologLine)
+                let content = try #require(app.panel.contentView)
+                let modes = try #require(content.firstDescendant(of: NSSegmentedControl.self))
+                modes.selectedSegment = 1
+                _ = modes.sendAction(modes.action, to: modes.target)
+                app.spin(0.6)
+                let raw = try #require(content.firstDescendant(of: FoldingTextView.self) { !$0.isEditable })
+                let scrollView = try #require(raw.enclosingScrollView)
+                let top = scrollView.contentView.bounds.minY
+                // Each fold changes the text's height: the text stays put, then and later.
+                var offsets: [CGFloat] = []
+                for _ in 0..<2 {
+                    raw.folding?.foldAll()
+                    scrollView.layoutSubtreeIfNeeded()
+                    scrollView.tile()
+                    offsets.append(scrollView.contentView.bounds.minY)
+                    app.spin(0.02)
+                    offsets.append(scrollView.contentView.bounds.minY)
+                    raw.folding?.unfoldAll()
+                    scrollView.tile()
+                    app.spin(0.4)
+                    offsets.append(scrollView.contentView.bounds.minY)
+                }
+                #expect(offsets.allSatisfy { $0 == top })
+            }
+        }
+
         @Test func theCardsRawFoldsAndItsSearchExpandsWhatItFinds() async throws {
             try await runInApp {
                 let app = try AppHarness()

@@ -808,14 +808,16 @@ private func readOnlyTextView(inset: NSSize, foldsJSON: Bool = false) -> (NSScro
 /// again, so on each resize the clip view moves a point, and back a moment later;
 /// and once more when the resizing has settled, as the card's animation ends.
 private final class TextCardScrollView: NSScrollView {
-    /// The text view's and the clip view's sizes the layer last drew at.
+    /// The text view's width and the clip view's size the layer last drew at. Not
+    /// the text view's height: that changes alone as Raw JSON folds, which the
+    /// nudge would make bounce.
     private var sizes: [NSSize] = []
     private var isNudging = false
     private var settleTimer: Timer?
 
     override func tile() {
         super.tile()
-        let sizes = [documentView?.frame.size ?? .zero, contentView.frame.size]
+        let sizes = [NSSize(width: documentView?.frame.width ?? 0, height: 0), contentView.frame.size]
         guard sizes != self.sizes else { return }
         self.sizes = sizes
         nudge()
