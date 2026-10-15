@@ -59,6 +59,7 @@ public struct SkippedEntries: Sendable, Equatable {
 ///   "inspectorLayout": "tabs",
 ///   "appearance": "system",
 ///   "clearSelectionAfter": 0,
+///   "checkForUpdates": true,
 ///   "shortcuts": { "toggleHighlighting": "cmd+e", "goToLine": "cmd+g", "toggleWrapLines": "", …,
 ///                  "selectTab": "cmd", "matchClick": "cmd" },
 ///   "patterns": [
@@ -89,7 +90,8 @@ public struct SkippedEntries: Sendable, Equatable {
 /// `InspectorLayout` raw value, `tabs` by default; `appearance` an `AppearanceSetting`
 /// raw value, `system` by default. `clearSelectionAfter` is how many seconds after
 /// the Selection Popover closes it clears its text, a whole number; 0 (the
-/// default) keeps it. `shortcuts` holds the app's own shortcuts by `ShortcutCommand`
+/// default) keeps it. `checkForUpdates`, true by default, has textier look for a
+/// newer release at launch and once a day. `shortcuts` holds the app's own shortcuts by `ShortcutCommand`
 /// raw value, each in the `Shortcut` format, `""` for none and a missing one at its
 /// default; `selectTab` and `matchClick` are modifiers alone (`"cmd"`), which with a
 /// digit select a tab and with a click select a Match. A shortcut that doesn't read
@@ -129,6 +131,7 @@ public enum ConfigFile {
           "inspectorLayout": \(quote(config.inspectorLayout.rawValue)),
           "appearance": \(quote(config.appearance.rawValue)),
           "clearSelectionAfter": \(config.clearSelectionAfter),
+          "checkForUpdates": \(config.checkForUpdates),
           "shortcuts": \(shortcutsObject(config.shortcuts)),
           "patterns": [
         \(patterns)
@@ -302,6 +305,13 @@ public enum ConfigFile {
                 warnings.append(ConfigWarning(
                     #""clearSelectionAfter" \#(describe(value)) isn't a whole number of seconds; keeping the selection"#
                 ))
+            }
+        }
+        if let value = field("checkForUpdates", in: object) {
+            if case .bool(let check) = value {
+                config.checkForUpdates = check
+            } else {
+                warnings.append(ConfigWarning(#""checkForUpdates" \#(describe(value)) isn't true or false; checking"#))
             }
         }
         if let value = field("shortcuts", in: object) {

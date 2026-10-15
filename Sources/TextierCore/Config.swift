@@ -1,6 +1,7 @@
 /// The ordered Patterns textier detects with, the user's own Grok Definitions,
 /// the global shortcut, the editor command template, the Inspector's layout,
-/// whether the app is light or dark, and when the Selection Popover forgets its text.
+/// whether the app is light or dark, when the Selection Popover forgets its text,
+/// and whether textier looks for updates by itself.
 public struct Config: Sendable, Equatable {
     public var patterns: [Pattern]
     /// The user's own Grok Definitions, in file order. Each replaces a bundled one
@@ -20,11 +21,13 @@ public struct Config: Sendable, Equatable {
     public var clearSelectionAfter: Int
     /// The app's own shortcuts (the global one is `shortcut`).
     public var shortcuts: CommandShortcuts
+    /// Whether textier looks for a newer release at launch and once a day.
+    public var checkForUpdates: Bool
 
     public init(
         patterns: [Pattern], grok: [GrokDefinition] = [], shortcut: Shortcut = .default, editorCommand: String? = nil,
         inspectorLayout: InspectorLayout = .tabs, appearance: AppearanceSetting = .system,
-        clearSelectionAfter: Int = 0, shortcuts: CommandShortcuts = .default
+        clearSelectionAfter: Int = 0, shortcuts: CommandShortcuts = .default, checkForUpdates: Bool = true
     ) {
         self.patterns = patterns
         self.grok = grok
@@ -34,6 +37,7 @@ public struct Config: Sendable, Equatable {
         self.appearance = appearance
         self.clearSelectionAfter = clearSelectionAfter
         self.shortcuts = shortcuts
+        self.checkForUpdates = checkForUpdates
     }
 
     public static let `default` = Config(patterns: Pattern.shipped)

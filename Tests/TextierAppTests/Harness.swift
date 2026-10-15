@@ -65,6 +65,8 @@ final class AppHarness {
         Effects.openFile = { [weak self] in self?.openFile($0, line: $1) }
         Effects.openWithDefaultApp = { [weak self] in self?.openedWithDefaultApp.append($0) }
         Effects.revealInFinder = { [weak self] in self?.revealedInFinder.append($0) }
+        // No test reaches GitHub: one that checks for updates gives its Updater answers.
+        Updater.shared.fetch = { _ in throw UpdateError.network("no network in the tests") }
         // Windows show as they would, but see-through, click-through and without
         // bringing the app forward, so a test run doesn't cover the screen or take
         // the keyboard from whoever is working meanwhile. (A capture for a visual

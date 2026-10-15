@@ -1176,6 +1176,7 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
         menu.addItem(.separator())
         add("Settings…", #selector(showSettings), shortcut: shortcuts[.settings])
         add("Open Config File", #selector(openConfigFile))
+        add("Check for Updates…", #selector(checkForUpdates))
         menu.addItem(.separator())
         add("Quit", #selector(quit), shortcut: shortcuts[.quit])
         return menu
@@ -1186,6 +1187,7 @@ final class SelectionPopoverController: NSObject, NSPopoverDelegate {
     @objc private func clearSelection() { model.clear() }
     @objc private func showSettings() { SettingsWindowController.show() }
     @objc private func openConfigFile() { Editor.open(path: AppConfig.store.fileURL.path, line: nil) }
+    @objc private func checkForUpdates() { Updater.shared.check(userInitiated: true) }
     @objc private func quit() { NSApp.terminate(nil) }
 
     private func open() {

@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.popover.updateIcon()
         }
         AppConfig.store.start()
+        Updater.shared.start()
         // The menu bar icon shows from launch.
         _ = popover
         Editor.prepare()

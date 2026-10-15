@@ -158,6 +158,10 @@ final class SettingsModel {
     }
 
     /// Seconds after the Selection Popover closes that it clears its text; 0 never.
+    func setCheckForUpdates(_ check: Bool) {
+        apply { $0.checkForUpdates = check }
+    }
+
     func setClearSelectionAfter(_ seconds: Int) {
         apply { $0.clearSelectionAfter = max(0, seconds) }
     }

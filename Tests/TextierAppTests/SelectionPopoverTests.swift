@@ -550,7 +550,8 @@ extension AppTests {
                 // The menu bar icon's right-click menu.
                 let menu = controller.menu()
                 #expect(menu.items.map(\.title) == [
-                    "Show Selection", "Open Panel", "Clear Selection", "", "Settings…", "Open Config File", "", "Quit",
+                    "Show Selection", "Open Panel", "Clear Selection", "", "Settings…", "Open Config File", "Check for Updates…", "",
+                    "Quit",
                 ])
                 func item(_ title: String) throws -> NSMenuItem { try #require(menu.items.first { $0.title == title }) }
                 // Nothing to clear yet; the Panel opens all the same.

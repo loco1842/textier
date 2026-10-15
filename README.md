@@ -76,7 +76,7 @@ When was that in local time, and how long ago? What's in that JSON? Can you jump
 
 ### Fast, local, private
 
-- 100% native Swift and AppKit/SwiftUI, with no web views and no network calls.
+- 100% native Swift and AppKit/SwiftUI, with no web views. The one network call is the update check (below), which you can turn off.
 - Each Pattern gets a time limit, so a runaway regex can't hang the app.
 - Large inputs (200k+ characters) are inspected in the background.
 
@@ -98,6 +98,10 @@ When was that in local time, and how long ago? What's in that JSON? Can you jump
    ```
 
 4. Open it. textier lives in the menu bar, with no Dock icon.
+
+### Updates
+
+textier looks for a newer release on GitHub at launch and once a day, and **Check for Updates…** in the menu bar icon's menu looks right away. When there is one, it shows the release notes: **Install and Relaunch** downloads it, checks it against the release's checksum, replaces the app and opens the new one (no `xattr` needed). Turn the daily check off in **Settings → General**, or with `"checkForUpdates": false`.
 
 ### Build from source
 
@@ -141,6 +145,7 @@ Every shortcut, and the ⌘ of ⌘-click and ⌘1–9, can be changed in **Setti
   "editorCommand": "",
   "appearance": "system",
   "clearSelectionAfter": 0,
+  "checkForUpdates": true,
   "shortcuts": { "goToLine": "cmd+g", "toggleWrapLines": "cmd+option+w", "matchClick": "cmd", "…": "…" },
   "patterns": [
     { "name": "json", "builtin": "json", "enabled": true, "actions": ["open", "copy-pretty", "copy"] },
@@ -155,6 +160,7 @@ Every shortcut, and the ⌘ of ⌘-click and ⌘1–9, can be changed in **Setti
 - Patterns are tried in order; when two overlap, the earlier wins.
 - The first Action listed is what Return or a double-click runs.
 - `clearSelectionAfter` clears the Selection Popover's text that many seconds after it closes; `0` keeps it.
+- `checkForUpdates` has textier look for a newer release at launch and once a day.
 - A broken entry is skipped with a warning, shown in Settings and as a ⚠︎ on the menu bar icon, and the rest keep working.
 
 ## Project layout

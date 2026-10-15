@@ -89,6 +89,17 @@ private struct GeneralSettings: View {
                 .foregroundStyle(.secondary)
         }
         Section {
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { model.config.checkForUpdates }, set: { model.setCheckForUpdates($0) }
+            ))
+            LabeledContent("textier \(Updater.shared.current?.description ?? "(development build)")") {
+                Button("Check Now") { Updater.shared.check(userInitiated: true) }
+            }
+        } footer: {
+            Text("Looks for a newer release on GitHub at launch and once a day; that's all textier sends over the network.")
+                .foregroundStyle(.secondary)
+        }
+        Section {
             LabeledContent("Editor command") {
                 HStack {
                     CommitField(text: $editorCommand, value: model.config.editorCommand ?? "", prompt: "$EDITOR") {
