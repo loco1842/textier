@@ -118,15 +118,19 @@ extension AppTests {
                 let block = region(textView, opening: #""a""#)
                 folding.fold(block)
 
-                // Right from before the "⋯": past it, still folded; and back.
+                // → from before the "⋯": past it, still folded; ← back; ⌥→ by word too.
+                @MainActor func move(_ selector: Selector) { textView.doCommand(by: selector) }
                 textView.setSelectedRange(NSRange(location: block.hidden.location, length: 0))
-                textView.setSelectedRange(NSRange(location: block.hidden.location + 1, length: 0))
+                move(#selector(NSResponder.moveRight(_:)))
                 #expect(textView.selectedRange().location == NSMaxRange(block.hidden))
-                textView.setSelectedRange(NSRange(location: NSMaxRange(block.hidden) - 1, length: 0))
+                move(#selector(NSResponder.moveLeft(_:)))
                 #expect(textView.selectedRange().location == block.hidden.location)
+                textView.setSelectedRange(NSRange(location: block.open - 3, length: 0))
+                move(#selector(NSResponder.moveWordRight(_:)))
+                #expect(folding.foldHiding(textView.selectedRange().location) == nil)
                 #expect(folding.isFolded(block))
 
-                // Anywhere else inside it (Go to Line, Find): it opens.
+                // Put inside it otherwise (Go to Line, Find): it opens.
                 let inside = (textView.string as NSString).range(of: "\"b\"").location
                 textView.setSelectedRange(NSRange(location: inside, length: 0))
                 #expect(!folding.isFolded(block))
@@ -165,6 +169,31 @@ extension AppTests {
             }
         }
 
+        @Test func aLineWhereTwoBlocksOpenShowsAndTogglesBoth() async throws {
+            try await runInApp {
+                let textView = textView("[{\n  \"a\": 1\n}\n]")
+                let folding = try #require(textView.folding)
+                let outer = try #require(folding.regions.first), inner = try #require(folding.regions.last)
+                let firstLine = NSRange(location: 0, length: 3)
+                #expect(folding.regions(openingIn: firstLine) == [outer, inner])
+
+                // Fold at the cursor takes the inner block; the line's chevron then opens it.
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+                textView.foldAtCursor()
+                #expect(folding.folded == [inner])
+                folding.toggle(line: folding.regions(openingIn: firstLine))
+                #expect(folding.folded.isEmpty)
+
+                // With none folded, the chevron folds the outer one; the inner one is then
+                // out of sight: not the line's, and Fold leaves it be.
+                folding.toggle(line: folding.regions(openingIn: firstLine))
+                #expect(folding.folded == [outer])
+                #expect(folding.regions(openingIn: firstLine) == [outer])
+                textView.foldAtCursor()
+                #expect(folding.folded == [outer])
+            }
+        }
+
         @Test func plainTextDoesntFold() async throws {
             try await runInApp {
                 let textView = FoldingTextView.make(foldsJSON: false)
@@ -200,7 +229,7 @@ extension AppTests {
                 let line = folding.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
                 let inText = NSPoint(x: 0, y: line.midY + editor.textContainerOrigin.y)
                 let inRuler = ruler.convert(inText, from: editor)
-                #expect(ruler.region(at: inRuler) == block)
+                #expect(ruler.regions(at: inRuler).first == block)
                 ruler.mouseDown(with: click(at: ruler.convert(inRuler, to: nil), in: controller.window))
                 #expect(folding.isFolded(block))
 

@@ -389,12 +389,9 @@ private struct RawBar: View {
             }
             Spacer(minLength: 0)
             if model.mode == .raw, model.isJSONPattern {
-                IconButton(title: "Expand all", systemImage: "rectangle.expand.vertical") {
-                    model.rawEditor?.folding?.unfoldAll()
-                }
-                IconButton(title: "Collapse all", systemImage: "rectangle.compress.vertical") {
-                    model.rawEditor?.folding?.foldAll()
-                }
+                ExpandCollapseButtons(
+                    expand: { model.rawEditor?.folding?.unfoldAll() }, collapse: { model.rawEditor?.folding?.foldAll() }
+                )
             }
             if model.mode == .raw, model.canBeautify {
                 Button("Beautify") { model.beautify() }

@@ -22,9 +22,16 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         }
     }
     /// The text's blocks that fold, by opening bracket; worked out again after each edit.
-    private(set) var regions: [FoldRegion] = []
+    private(set) var regions: [FoldRegion] = [] {
+        didSet { regionSet = Set(regions) }
+    }
     /// The folded blocks, by opening bracket.
-    private(set) var folded: [FoldRegion] = []
+    private(set) var folded: [FoldRegion] = [] {
+        didSet { foldedSet = Set(folded) }
+    }
+    // For looking them up: a large JSON has thousands of blocks.
+    private var regionSet: Set<FoldRegion> = []
+    private var foldedSet: Set<FoldRegion> = []
     /// The folded blocks not inside another folded one: what's hidden, each with
     /// its placeholder, by opening bracket.
     private var outermost: [FoldRegion] = []
@@ -38,10 +45,10 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
 
     // MARK: Folding
 
-    func isFolded(_ region: FoldRegion) -> Bool { folded.contains(region) }
+    func isFolded(_ region: FoldRegion) -> Bool { foldedSet.contains(region) }
 
     func fold(_ region: FoldRegion) {
-        guard regions.contains(region), !isFolded(region) else { return }
+        guard regionSet.contains(region), !isFolded(region) else { return }
         setFolded(folded + [region])
     }
 
@@ -75,20 +82,36 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     /// Folds `regions` that are still the text's blocks, as after the text was put
     /// back unchanged.
     func refold(_ kept: [FoldRegion]) {
-        setFolded(kept.filter(regions.contains))
+        setFolded(kept.filter(regionSet.contains))
     }
 
-    /// Expands the folded blocks whose hidden text overlaps `range` (or, for an
-    /// empty range, holds its location inside).
-    func unfold(revealing range: NSRange) {
-        let hiding = folded.filter { region in
+    /// Expands the folded blocks whose hidden text overlaps one of `ranges` (or,
+    /// for an empty range, holds its location inside). The ranges don't overlap,
+    /// as a search's finds don't.
+    func unfold(revealing ranges: [NSRange]) {
+        let ranges = ranges.sorted { $0.location < $1.location }
+        let revealed = folded.filter { region in
             let hidden = region.hidden
+            // The first range ending past the hidden text's start is the only one
+            // that can reach into it.
+            var low = 0, high = ranges.count
+            while low < high {
+                let middle = (low + high) / 2
+                if NSMaxRange(ranges[middle]) <= hidden.location { low = middle + 1 } else { high = middle }
+            }
+            guard low < ranges.count else { return false }
+            let range = ranges[low]
             return range.length == 0
                 ? range.location > hidden.location && range.location < NSMaxRange(hidden)
                 : NSIntersectionRange(range, hidden).length > 0
         }
-        guard !hiding.isEmpty else { return }
-        setFolded(folded.filter { !hiding.contains($0) })
+        guard !revealed.isEmpty else { return }
+        let revealedSet = Set(revealed)
+        setFolded(folded.filter { !revealedSet.contains($0) })
+    }
+
+    func unfold(revealing range: NSRange) {
+        unfold(revealing: [range])
     }
 
     /// The folded block whose hidden text holds `location` inside it (not at its
@@ -97,15 +120,53 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         outermost.first { location > $0.hidden.location && location < NSMaxRange($0.hidden) }
     }
 
-    /// The first block that opens in `characters` (the outermost of a line's).
-    func region(openingIn characters: NSRange) -> FoldRegion? {
-        regions.first { NSLocationInRange($0.open, characters) }
+    /// The blocks whose opening bracket shows in `characters` (not hidden in a
+    /// fold), outermost first: a line's, for its chevron.
+    func regions(openingIn characters: NSRange) -> [FoldRegion] {
+        var index = Self.first(in: regions) { $0.open >= characters.location }
+        var found: [FoldRegion] = []
+        while index < regions.count, NSLocationInRange(regions[index].open, characters) {
+            if !isHidden(regions[index].open) { found.append(regions[index]) }
+            index += 1
+        }
+        return found
+    }
+
+    /// A line's chevron, for the blocks that open on it (`regions(openingIn:)`):
+    /// those folded expand, or with none folded, the outermost folds.
+    func toggle(line blocks: [FoldRegion]) {
+        let folded = blocks.filter(isFolded)
+        if folded.isEmpty, let outermost = blocks.first { return fold(outermost) }
+        setFolded(self.folded.filter { !folded.contains($0) })
+    }
+
+    /// Whether the character at `index` is hidden in a fold (the placeholder's included).
+    func isHidden(_ index: Int) -> Bool { hiding(index) != nil }
+
+    /// The folds whose placeholders are in `characters`.
+    func placeholders(in characters: NSRange) -> ArraySlice<FoldRegion> {
+        let start = Self.first(in: outermost) { $0.hidden.location >= characters.location }
+        let end = Self.first(in: outermost) { $0.hidden.location >= NSMaxRange(characters) }
+        return outermost[start..<max(start, end)]
+    }
+
+    /// The index of the first of `sorted` that `isPast`, which holds from some
+    /// point on; the count when none does.
+    private static func first(in sorted: [FoldRegion], where isPast: (FoldRegion) -> Bool) -> Int {
+        var low = 0, high = sorted.count
+        while low < high {
+            let middle = (low + high) / 2
+            if isPast(sorted[middle]) { high = middle } else { low = middle + 1 }
+        }
+        return low
     }
 
     /// The placeholder at `point` (in text container coordinates), as its block.
     func placeholder(at point: NSPoint) -> FoldRegion? {
-        guard let container = textContainers.first else { return nil }
-        return outermost.first { placeholderRect(of: $0, in: container)?.contains(point) == true }
+        guard let container = textContainers.first, numberOfGlyphs > 0 else { return nil }
+        let character = characterIndexForGlyph(at: glyphIndex(for: point, in: container))
+        let near = NSRange(location: max(0, character - 1), length: 3)
+        return placeholders(in: near).first { placeholderRect(of: $0, in: container)?.contains(point) == true }
     }
 
     /// Where `region`'s placeholder is drawn, in text container coordinates.
@@ -123,9 +184,13 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         outermost = Self.outermost(of: next)
         guard let length = textStorage?.length, length > 0, let first = changed.map(\.open).min(),
               let last = changed.map(\.close).max() else { return notify() }
-        let range = NSIntersectionRange(NSRange(location: first, length: last - first + 1), NSRange(location: 0, length: length))
-        invalidateGlyphs(forCharacterRange: range, changeInLength: 0, actualCharacterRange: nil)
-        invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+        relayout(NSIntersectionRange(NSRange(location: first, length: last - first + 1), NSRange(location: 0, length: length)))
+    }
+
+    /// Lays `characters` out again, hiding or showing what's folded now, and says so.
+    private func relayout(_ characters: NSRange) {
+        invalidateGlyphs(forCharacterRange: characters, changeInLength: 0, actualCharacterRange: nil)
+        invalidateLayout(forCharacterRange: characters, actualCharacterRange: nil)
         notify()
     }
 
@@ -175,7 +240,7 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             return nil
         }
         findRegions()
-        let kept = moved.filter(regions.contains)
+        let kept = moved.filter(regionSet.contains)
         let dropped = kept.count < folded.count
         folded = kept
         outermost = Self.outermost(of: kept)
@@ -185,10 +250,7 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         )
         guard dropped else { return }
         // A dropped fold's text shows again.
-        let whole = NSRange(location: 0, length: textStorage.length)
-        invalidateGlyphs(forCharacterRange: whole, changeInLength: 0, actualCharacterRange: nil)
-        invalidateLayout(forCharacterRange: whole, actualCharacterRange: nil)
-        notify()
+        relayout(NSRange(location: 0, length: textStorage.length))
     }
 
     // MARK: Hiding and the placeholder
@@ -243,7 +305,7 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
         guard let container = textContainers.first, let storage = textStorage else { return }
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-        for region in outermost where NSLocationInRange(region.hidden.location, characters) {
+        for region in placeholders(in: characters) {
             guard let rect = placeholderRect(of: region, in: container) else { continue }
             let font = storage.attribute(.font, at: region.hidden.location, effectiveRange: nil) as? NSFont
                 ?? .monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -281,6 +343,14 @@ final class FoldingTextView: OwnCopyTextView {
     }
 
     private var isRevealing = false
+    /// Set while a key moves the cursor (an arrow, ⌥ and an arrow, …).
+    private var isMovingByKey = false
+
+    override func doCommand(by selector: Selector) {
+        isMovingByKey = true
+        defer { isMovingByKey = false }
+        super.doCommand(by: selector)
+    }
 
     override func setSelectedRanges(
         _ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool
@@ -291,14 +361,11 @@ final class FoldingTextView: OwnCopyTextView {
         isRevealing = true
         defer { isRevealing = false }
         let selection = selectedRange()
-        // An arrow moving onto a fold, from either side, steps over it.
-        if previous.length == 0, selection.length == 0, let region = folding.foldHiding(selection.location) {
-            if previous.location == region.hidden.location, selection.location == region.hidden.location + 1 {
-                return setSelectedRange(NSRange(location: NSMaxRange(region.hidden), length: 0))
-            }
-            if previous.location == NSMaxRange(region.hidden), selection.location == NSMaxRange(region.hidden) - 1 {
-                return setSelectedRange(NSRange(location: region.hidden.location, length: 0))
-            }
+        // A key moving the cursor into a fold steps over it, the way it was going;
+        // the cursor put there otherwise (Go to Line, Find, a click) opens it.
+        if isMovingByKey, previous.length == 0, selection.length == 0, let region = folding.foldHiding(selection.location) {
+            let past = selection.location > previous.location ? NSMaxRange(region.hidden) : region.hidden.location
+            return setSelectedRange(NSRange(location: past, length: 0))
         }
         for end in Set([selection.location, NSMaxRange(selection)]) {
             folding.unfold(revealing: NSRange(location: end, length: 0))
@@ -320,8 +387,11 @@ final class FoldingTextView: OwnCopyTextView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
+        // The placeholders in view: measuring one lays its text out.
         guard let folding, let container = textContainer else { return }
-        for region in folding.folded {
+        let visible = visibleRect.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y)
+        let glyphs = folding.glyphRange(forBoundingRect: visible, in: container)
+        for region in folding.placeholders(in: folding.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)) {
             guard let rect = folding.placeholderRect(of: region, in: container) else { continue }
             addCursorRect(rect.offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y), cursor: .pointingHand)
         }
@@ -341,14 +411,8 @@ final class FoldingTextView: OwnCopyTextView {
 
     // MARK: At the cursor
 
-    /// The lines `location` and each block's brackets are on, by line start.
     private func line(of location: Int, in starts: [Int]) -> Int {
-        var low = 0, high = starts.count - 1
-        while low < high {
-            let middle = (low + high + 1) / 2
-            if starts[middle] <= location { low = middle } else { high = middle - 1 }
-        }
-        return low
+        LineNumberRuler.line(of: location, in: starts)
     }
 
     /// Folds the innermost expanded block the cursor's line is in (its opening
@@ -358,8 +422,10 @@ final class FoldingTextView: OwnCopyTextView {
         guard let folding else { return }
         let starts = LineNumberRuler.lineStarts(in: string as NSString)
         let cursor = line(of: selectedRange().location, in: starts)
+        // Not one hidden in a fold already: folding it would change nothing in view.
         let candidates = folding.regions.filter { region in
-            !folding.isFolded(region) && line(of: region.open, in: starts) <= cursor && cursor < line(of: region.close, in: starts)
+            !folding.isFolded(region) && !folding.isHidden(region.open)
+                && line(of: region.open, in: starts) <= cursor && cursor < line(of: region.close, in: starts)
         }
         guard let region = candidates.last else { return NSSound.beep() }
         let selection = selectedRange()
@@ -377,9 +443,11 @@ final class FoldingTextView: OwnCopyTextView {
         guard let folding else { return }
         let starts = LineNumberRuler.lineStarts(in: string as NSString)
         let cursor = line(of: selectedRange().location, in: starts)
-        let onLine = folding.folded.filter { line(of: $0.open, in: starts) == cursor }
+        // Those in view: one hidden in another fold would open out of sight.
+        let shown = folding.folded.filter { !folding.isHidden($0.open) }
+        let onLine = shown.filter { line(of: $0.open, in: starts) == cursor }
         if !onLine.isEmpty { return onLine.forEach(folding.unfold) }
-        let around = folding.folded.filter { line(of: $0.open, in: starts) <= cursor && cursor <= line(of: $0.close, in: starts) }
+        let around = shown.filter { line(of: $0.open, in: starts) <= cursor && cursor <= line(of: $0.close, in: starts) }
         guard let region = around.last else { return NSSound.beep() }
         folding.unfold(region)
     }

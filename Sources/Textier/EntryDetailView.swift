@@ -320,11 +320,11 @@ struct JSONDetailView: View {
                 Spacer(minLength: 0)
                 switch mode {
                 case .tree:
-                    IconButton(title: "Expand all", systemImage: "rectangle.expand.vertical") { tree.viewer.expandAll() }
-                    IconButton(title: "Collapse all", systemImage: "rectangle.compress.vertical") { tree.viewer.collapseAll() }
+                    ExpandCollapseButtons(expand: tree.viewer.expandAll, collapse: tree.viewer.collapseAll)
                 case .raw:
-                    IconButton(title: "Expand all", systemImage: "rectangle.expand.vertical") { tree.rawText?.folding?.unfoldAll() }
-                    IconButton(title: "Collapse all", systemImage: "rectangle.compress.vertical") { tree.rawText?.folding?.foldAll() }
+                    ExpandCollapseButtons(
+                        expand: { tree.rawTextView?.folding?.unfoldAll() }, collapse: { tree.rawTextView?.folding?.foldAll() }
+                    )
                 }
             }
             .controlSize(.small)
@@ -343,7 +343,7 @@ struct JSONDetailView: View {
             case .raw:
                 JSONTextHost(
                     text: tree.pretty, light: AppConfig.store.lightTheme, dark: AppConfig.store.darkTheme,
-                    query: tree.appliedQuery, accent: tree.accent, onTextView: { [tree] in tree.rawText = $0 }
+                    query: tree.appliedQuery, accent: tree.accent, onTextView: { [tree] in tree.rawTextView = $0 }
                 ) { rawMatches = $0 }
             }
             JSONFooter(
@@ -381,7 +381,7 @@ final class JSONTreeModel {
     @ObservationIgnored private let source: String
 
     /// Raw's text view, while Raw shows, for Expand all and Collapse all.
-    @ObservationIgnored weak var rawText: FoldingTextView?
+    @ObservationIgnored weak var rawTextView: FoldingTextView?
 
     /// The JSON beautified, for Raw; made once, when first shown.
     @ObservationIgnored private(set) lazy var pretty = viewer.root.value.prettyPrinted
@@ -551,9 +551,19 @@ private struct JSONFooter: View {
     }
 }
 
-/// An icon button with a hover fill, for the JSON Viewer's toolbar and the Match
-/// Window's Raw bar.
-struct IconButton: View {
+/// Expand all and Collapse all, for a Tree's rows or Raw's folds.
+struct ExpandCollapseButtons: View {
+    let expand: () -> Void
+    let collapse: () -> Void
+
+    var body: some View {
+        IconButton(title: "Expand all", systemImage: "rectangle.expand.vertical", action: expand)
+        IconButton(title: "Collapse all", systemImage: "rectangle.compress.vertical", action: collapse)
+    }
+}
+
+/// An icon button with a hover fill, for the JSON Viewer's toolbar.
+private struct IconButton: View {
     let title: String
     let systemImage: String
     let action: () -> Void
@@ -745,9 +755,9 @@ private final class JSONTextCoordinator: NSObject, NSTextViewDelegate {
                 found.append(range)
                 search = NSRange(location: NSMaxRange(range), length: text.length - NSMaxRange(range))
             }
+            folding?.unfold(revealing: found)
             let color = NSColor.pattern(accent, \.strongTint)
             for range in found {
-                folding?.unfold(revealing: range)
                 layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: range)
             }
             if let first = found.first { textView.scrollRangeToVisible(first) }

@@ -124,40 +124,45 @@ final class LineNumberRuler: NSRulerView {
         needsDisplay = true
     }
 
+    /// Tells the ruler when the pointer is over it, for `isHovering`.
+    private lazy var hoverArea = NSTrackingArea(
+        rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self
+    )
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        for area in trackingAreas { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        if !trackingAreas.contains(hoverArea) { addTrackingArea(hoverArea) }
     }
 
     override func mouseEntered(with event: NSEvent) { isHovering = true }
     override func mouseExited(with event: NSEvent) { isHovering = false }
 
-    /// A click on a line a block opens on folds or expands it.
+    /// A click on a line blocks open on folds or expands them
+    /// (`FoldingLayoutManager.toggle(line:)`).
     override func mouseDown(with event: NSEvent) {
-        guard let folding, let region = region(at: convert(event.locationInWindow, from: nil)) else {
-            return super.mouseDown(with: event)
-        }
-        folding.toggle(region)
+        let blocks = regions(at: convert(event.locationInWindow, from: nil))
+        guard let folding, !blocks.isEmpty else { return super.mouseDown(with: event) }
+        folding.toggle(line: blocks)
     }
 
-    /// The block that opens on the line at `point`, in the ruler's coordinates.
-    func region(at point: NSPoint) -> FoldRegion? {
-        guard let textView, let folding, let container = textView.textContainer else { return nil }
+    /// The blocks that open in view on the line at `point`, in the ruler's
+    /// coordinates, outermost first.
+    func regions(at point: NSPoint) -> [FoldRegion] {
+        guard let textView, let folding, let container = textView.textContainer, folding.numberOfGlyphs > 0 else { return [] }
         let inText = textView.convert(point, from: self)
         let origin = textView.textContainerOrigin
         let glyph = folding.glyphIndex(for: NSPoint(x: 0, y: inText.y - origin.y), in: container)
         let fragment = folding.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-        guard inText.y - origin.y >= fragment.minY, inText.y - origin.y < fragment.maxY else { return nil }
-        return region(onLineOf: folding.characterIndexForGlyph(at: glyph))
+        guard inText.y - origin.y >= fragment.minY, inText.y - origin.y < fragment.maxY else { return [] }
+        return regions(onLineOf: folding.characterIndexForGlyph(at: glyph))
     }
 
-    /// The block that opens on the line `index` is on.
-    private func region(onLineOf index: Int) -> FoldRegion? {
+    /// The blocks that open in view on the line `index` is on.
+    private func regions(onLineOf index: Int) -> [FoldRegion] {
         let line = lineNumber(at: index)
         let start = lineStarts[line - 1]
         let end = line < lineStarts.count ? lineStarts[line] : (textView?.string as NSString?)?.length ?? start
-        return folding?.region(openingIn: NSRange(location: start, length: end - start))
+        return folding?.regions(openingIn: NSRange(location: start, length: end - start)) ?? []
     }
 
     private func countLines() {
@@ -185,12 +190,17 @@ final class LineNumberRuler: NSRulerView {
 
     /// The 1-based line `index` is on.
     func lineNumber(at index: Int) -> Int {
-        var low = 0, high = lineStarts.count - 1
+        Self.line(of: index, in: lineStarts) + 1
+    }
+
+    /// The 0-based line `index` is on, in a text whose lines start at `starts`.
+    static func line(of index: Int, in starts: [Int]) -> Int {
+        var low = 0, high = starts.count - 1
         while low < high {
             let middle = (low + high + 1) / 2
-            if lineStarts[middle] <= index { low = middle } else { high = middle - 1 }
+            if starts[middle] <= index { low = middle } else { high = middle - 1 }
         }
-        return low + 1
+        return low
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -221,8 +231,9 @@ final class LineNumberRuler: NSRulerView {
         let chevrons = folding == nil ? 0 : Self.chevronWidth
         func label(_ number: Int, atLineTop top: CGFloat, start: Int) {
             let y = convert(NSPoint(x: 0, y: top + origin.y), from: textView).y + (lineHeight - labelHeight) / 2
-            if let folding, let region = region(onLineOf: start) {
-                let isFolded = folding.isFolded(region)
+            if let folding, case let blocks = regions(onLineOf: start), !blocks.isEmpty {
+                // Folded when one of the line's blocks is, as a click then opens it.
+                let isFolded = blocks.contains(where: folding.isFolded)
                 if isFolded || isHovering { drawChevron(folded: isFolded, centerY: y + labelHeight / 2) }
             }
             let isCurrent = number == currentLine
