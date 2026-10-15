@@ -320,7 +320,9 @@ struct JSONDetailView: View {
                 Spacer(minLength: 0)
                 switch mode {
                 case .tree:
-                    ExpandCollapseButtons(expand: tree.viewer.expandAll, collapse: tree.viewer.collapseAll)
+                    // Closures, not method references: Xcode 26.6's compiler (CI) has
+                    // crashed on those.
+                    ExpandCollapseButtons(expand: { tree.viewer.expandAll() }, collapse: { tree.viewer.collapseAll() })
                 case .raw:
                     ExpandCollapseButtons(
                         expand: { tree.rawTextView?.folding?.unfoldAll() }, collapse: { tree.rawTextView?.folding?.foldAll() }
@@ -562,7 +564,8 @@ struct ExpandCollapseButtons: View {
     }
 }
 
-/// An icon button with a hover fill, for the JSON Viewer's toolbar.
+/// An icon button with a hover fill, for the JSON Viewer's toolbar and the Match
+/// Window's Raw bar.
 private struct IconButton: View {
     let title: String
     let systemImage: String

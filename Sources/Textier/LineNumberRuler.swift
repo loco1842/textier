@@ -10,7 +10,7 @@ import TextierCore
 ///
 /// When the text folds (Raw JSON, `FoldingLayoutManager`), a chevron follows the
 /// number of each line a block opens on, always: › on a folded one, ⌄ on one to
-/// fold. A click on it folds or expands the block.
+/// fold. A click on it folds or expands the line's blocks.
 @MainActor
 final class LineNumberRuler: NSRulerView {
     private weak var textView: NSTextView?
@@ -121,11 +121,11 @@ final class LineNumberRuler: NSRulerView {
     }
 
     /// A click on a line blocks open on folds or expands them
-    /// (`FoldingLayoutManager.toggle(line:)`).
+    /// (`FoldingLayoutManager.toggleLine(opening:)`).
     override func mouseDown(with event: NSEvent) {
         let blocks = regions(at: convert(event.locationInWindow, from: nil))
         guard let folding, !blocks.isEmpty else { return super.mouseDown(with: event) }
-        folding.toggle(line: blocks)
+        folding.toggleLine(opening: blocks)
     }
 
     /// The blocks that open in view on the line at `point`, in the ruler's
@@ -135,17 +135,21 @@ final class LineNumberRuler: NSRulerView {
         let inText = textView.convert(point, from: self)
         let origin = textView.textContainerOrigin
         let glyph = folding.glyphIndex(for: NSPoint(x: 0, y: inText.y - origin.y), in: container)
-        let fragment = folding.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        var row = NSRange()
+        let fragment = folding.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &row)
         guard inText.y - origin.y >= fragment.minY, inText.y - origin.y < fragment.maxY else { return [] }
-        return regions(onLineOf: folding.characterIndexForGlyph(at: glyph))
+        return regions(onRowFrom: folding.characterIndexForGlyph(at: row.location),
+                       to: folding.characterIndexForGlyph(at: NSMaxRange(row) - 1))
     }
 
-    /// The blocks that open in view on the line `index` is on.
-    private func regions(onLineOf index: Int) -> [FoldRegion] {
-        let line = lineNumber(at: index)
-        let start = lineStarts[line - 1]
-        let end = line < lineStarts.count ? lineStarts[line] : (textView?.string as NSString?)?.length ?? start
-        return folding?.regions(openingIn: NSRange(location: start, length: end - start)) ?? []
+    /// The blocks that open in view on the lines a row shows, from the one
+    /// `first` is on to the one `last` is on: one line, or with a fold, the
+    /// fold's first line and the line its closing bracket is on (`}, {`).
+    func regions(onRowFrom first: Int, to last: Int) -> [FoldRegion] {
+        let start = lineStarts[lineNumber(at: first) - 1]
+        let lastLine = lineNumber(at: last)
+        let end = lastLine < lineStarts.count ? lineStarts[lastLine] : (textView?.string as NSString?)?.length ?? start
+        return folding?.regions(openingIn: NSRange(location: start, length: max(0, end - start))) ?? []
     }
 
     private func countLines() {
@@ -212,9 +216,9 @@ final class LineNumberRuler: NSRulerView {
         let labelHeight = Self.font.ascender - Self.font.descender
         let folding = self.folding
         let chevrons = folding == nil ? 0 : Self.chevronWidth
-        func label(_ number: Int, atLineTop top: CGFloat, start: Int) {
+        func label(_ number: Int, atLineTop top: CGFloat, start: Int, last: Int) {
             let y = convert(NSPoint(x: 0, y: top + origin.y), from: textView).y + (lineHeight - labelHeight) / 2
-            if let folding, case let blocks = regions(onLineOf: start), !blocks.isEmpty {
+            if let folding, case let blocks = regions(onRowFrom: start, to: last), !blocks.isEmpty {
                 // Folded when one of the line's blocks is, as a click then opens it.
                 let isFolded = blocks.contains(where: folding.isFolded)
                 drawChevron(folded: isFolded, centerY: y + labelHeight / 2)
@@ -240,12 +244,14 @@ final class LineNumberRuler: NSRulerView {
             let start = layoutManager.characterIndexForGlyph(at: fragmentGlyphs.location)
             // Only a line's first row: the text's start, or right after a line break.
             guard start == 0 || string.isLineBreak(at: start - 1) else { return }
-            label(self.lineNumber(at: start), atLineTop: fragment.minY, start: start)
+            let last = layoutManager.characterIndexForGlyph(at: NSMaxRange(fragmentGlyphs) - 1)
+            label(self.lineNumber(at: start), atLineTop: fragment.minY, start: start, last: last)
         }
         // The empty line after a final line break has its own fragment.
         let extra = layoutManager.extraLineFragmentRect
         if !extra.isEmpty, extra.intersects(visible.offsetBy(dx: -origin.x, dy: -origin.y)) {
-            label(lineStarts.count, atLineTop: extra.minY, start: lineStarts[lineStarts.count - 1])
+            let start = lineStarts[lineStarts.count - 1]
+            label(lineStarts.count, atLineTop: extra.minY, start: start, last: start)
         }
     }
 

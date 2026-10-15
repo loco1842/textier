@@ -57,10 +57,6 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         setFolded(folded.filter { $0 != region })
     }
 
-    func toggle(_ region: FoldRegion) {
-        isFolded(region) ? unfold(region) : fold(region)
-    }
-
     /// Folds every block but the outermost ones, so the top level shows.
     func foldAll() {
         // Regions come by opening bracket: a region is inside another when one still
@@ -79,8 +75,8 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         setFolded([])
     }
 
-    /// Folds `regions` that are still the text's blocks, as after the text was put
-    /// back unchanged.
+    /// Folds those of `kept` that are still the text's blocks, as after the text
+    /// was put back unchanged.
     func refold(_ kept: [FoldRegion]) {
         setFolded(kept.filter(regionSet.contains))
     }
@@ -94,11 +90,7 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
             let hidden = region.hidden
             // The first range ending past the hidden text's start is the only one
             // that can reach into it.
-            var low = 0, high = ranges.count
-            while low < high {
-                let middle = (low + high) / 2
-                if NSMaxRange(ranges[middle]) <= hidden.location { low = middle + 1 } else { high = middle }
-            }
+            let low = Self.first(in: ranges) { NSMaxRange($0) > hidden.location }
             guard low < ranges.count else { return false }
             let range = ranges[low]
             return range.length == 0
@@ -132,9 +124,10 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         return found
     }
 
-    /// A line's chevron, for the blocks that open on it (`regions(openingIn:)`):
-    /// those folded expand, or with none folded, the outermost folds.
-    func toggle(line blocks: [FoldRegion]) {
+    /// A click on a line's chevron, for the blocks that open on it
+    /// (`regions(openingIn:)`): those folded expand, or with none folded, the
+    /// outermost folds.
+    func toggleLine(opening blocks: [FoldRegion]) {
         let folded = blocks.filter(isFolded)
         if folded.isEmpty, let outermost = blocks.first { return fold(outermost) }
         setFolded(self.folded.filter { !folded.contains($0) })
@@ -152,7 +145,7 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
 
     /// The index of the first of `sorted` that `isPast`, which holds from some
     /// point on; the count when none does.
-    private static func first(in sorted: [FoldRegion], where isPast: (FoldRegion) -> Bool) -> Int {
+    private static func first<Element>(in sorted: [Element], where isPast: (Element) -> Bool) -> Int {
         var low = 0, high = sorted.count
         while low < high {
             let middle = (low + high) / 2
@@ -258,11 +251,7 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
     /// Whether `index` is hidden: nil when it shows, true for a hidden range's first
     /// character, where the placeholder goes, false for the rest.
     private func hiding(_ index: Int) -> Bool? {
-        var low = 0, high = outermost.count
-        while low < high {
-            let middle = (low + high) / 2
-            if NSMaxRange(outermost[middle].hidden) <= index { low = middle + 1 } else { high = middle }
-        }
+        let low = Self.first(in: outermost) { NSMaxRange($0.hidden) > index }
         guard low < outermost.count, NSLocationInRange(index, outermost[low].hidden) else { return nil }
         return index == outermost[low].hidden.location
     }
@@ -327,9 +316,9 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
 
 /// A text view whose JSON folds (`FoldingLayoutManager`). A click on a "⋯"
 /// expands it, and so does the cursor or a selection's end moving into a folded
-/// block (an arrow moving onto one steps over it instead). Fold and Unfold's
-/// shortcuts (⌥⌘[ and ⌥⌘], the Config's `shortcuts`) work on the block at the
-/// cursor.
+/// block (a key moving the cursor onto one, an arrow or ⌥ and an arrow, steps
+/// over it instead). Fold and Unfold's shortcuts (⌥⌘[ and ⌥⌘], the Config's
+/// `shortcuts`) work on the block at the cursor.
 final class FoldingTextView: OwnCopyTextView {
     var folding: FoldingLayoutManager? { layoutManager as? FoldingLayoutManager }
 
@@ -411,21 +400,17 @@ final class FoldingTextView: OwnCopyTextView {
 
     // MARK: At the cursor
 
-    private func line(of location: Int, in starts: [Int]) -> Int {
-        LineNumberRuler.line(of: location, in: starts)
-    }
-
     /// Folds the innermost expanded block the cursor's line is in (its opening
     /// line up to the line before its closing bracket's), the cursor moving to
     /// just after its opening bracket.
     func foldAtCursor() {
         guard let folding else { return }
         let starts = LineNumberRuler.lineStarts(in: string as NSString)
-        let cursor = line(of: selectedRange().location, in: starts)
+        func line(_ index: Int) -> Int { LineNumberRuler.line(of: index, in: starts) }
+        let cursor = line(selectedRange().location)
         // Not one hidden in a fold already: folding it would change nothing in view.
         let candidates = folding.regions.filter { region in
-            !folding.isFolded(region) && !folding.isHidden(region.open)
-                && line(of: region.open, in: starts) <= cursor && cursor < line(of: region.close, in: starts)
+            !folding.isFolded(region) && !folding.isHidden(region.open) && line(region.open) <= cursor && cursor < line(region.close)
         }
         guard let region = candidates.last else { return NSSound.beep() }
         let selection = selectedRange()
@@ -442,12 +427,13 @@ final class FoldingTextView: OwnCopyTextView {
     func unfoldAtCursor() {
         guard let folding else { return }
         let starts = LineNumberRuler.lineStarts(in: string as NSString)
-        let cursor = line(of: selectedRange().location, in: starts)
+        func line(_ index: Int) -> Int { LineNumberRuler.line(of: index, in: starts) }
+        let cursor = line(selectedRange().location)
         // Those in view: one hidden in another fold would open out of sight.
         let shown = folding.folded.filter { !folding.isHidden($0.open) }
-        let onLine = shown.filter { line(of: $0.open, in: starts) == cursor }
+        let onLine = shown.filter { line($0.open) == cursor }
         if !onLine.isEmpty { return onLine.forEach(folding.unfold) }
-        let around = shown.filter { line(of: $0.open, in: starts) <= cursor && cursor <= line(of: $0.close, in: starts) }
+        let around = shown.filter { line($0.open) <= cursor && cursor <= line($0.close) }
         guard let region = around.last else { return NSSound.beep() }
         folding.unfold(region)
     }

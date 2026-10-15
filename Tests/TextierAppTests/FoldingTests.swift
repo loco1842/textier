@@ -181,16 +181,39 @@ extension AppTests {
                 textView.setSelectedRange(NSRange(location: 0, length: 0))
                 textView.foldAtCursor()
                 #expect(folding.folded == [inner])
-                folding.toggle(line: folding.regions(openingIn: firstLine))
+                folding.toggleLine(opening: folding.regions(openingIn: firstLine))
                 #expect(folding.folded.isEmpty)
 
                 // With none folded, the chevron folds the outer one; the inner one is then
                 // out of sight: not the line's, and Fold leaves it be.
-                folding.toggle(line: folding.regions(openingIn: firstLine))
+                folding.toggleLine(opening: folding.regions(openingIn: firstLine))
                 #expect(folding.folded == [outer])
                 #expect(folding.regions(openingIn: firstLine) == [outer])
                 textView.foldAtCursor()
                 #expect(folding.folded == [outer])
+
+                // Both folded: Unfold opens the outer one, not the inner one out of sight.
+                folding.unfoldAll()
+                folding.fold(inner)
+                folding.fold(outer)
+                textView.unfoldAtCursor()
+                #expect(folding.folded == [inner])
+            }
+        }
+
+        @Test func aFoldsRowHasTheChevronOfABlockOpeningAfterIt() async throws {
+            try await runInApp {
+                // After an edit: the next object opens on the line the first one closes on.
+                let textView = textView("[\n  {\n    \"a\": 1\n  }, {\n    \"b\": 2\n  }\n]")
+                let scrollView = NSScrollView(frame: textView.frame)
+                scrollView.documentView = textView
+                let ruler = LineNumberRuler(textView: textView)
+                let folding = try #require(textView.folding)
+                let first = folding.regions[1], second = folding.regions[2]
+                folding.fold(first)
+                // The row shows `{⋯}, {`: both blocks are its.
+                #expect(ruler.regions(onRowFrom: first.open, to: first.close + 3) == [first, second])
+                #expect(shownLines(textView) == [1, 2, 5, 6, 7])
             }
         }
 
@@ -239,6 +262,15 @@ extension AppTests {
                 let point = NSPoint(x: placeholder.midX + editor.textContainerOrigin.x, y: placeholder.midY + editor.textContainerOrigin.y)
                 editor.mouseDown(with: click(at: editor.convert(point, to: nil), in: controller.window))
                 #expect(!folding.isFolded(block))
+
+                // Anywhere on it: its left and right edges too.
+                for x in [placeholder.minX + 1, placeholder.maxX - 1] {
+                    folding.fold(block)
+                    let edge = NSPoint(x: x + editor.textContainerOrigin.x, y: point.y)
+                    #expect(folding.placeholder(at: NSPoint(x: x, y: placeholder.midY)) == block)
+                    editor.mouseDown(with: click(at: editor.convert(edge, to: nil), in: controller.window))
+                    #expect(!folding.isFolded(block))
+                }
             }
         }
 
