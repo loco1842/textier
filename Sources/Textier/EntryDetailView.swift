@@ -318,9 +318,13 @@ struct JSONDetailView: View {
                         .help("Copy what the query found, as a JSON array")
                 }
                 Spacer(minLength: 0)
-                if mode == .tree {
+                switch mode {
+                case .tree:
                     IconButton(title: "Expand all", systemImage: "rectangle.expand.vertical") { tree.viewer.expandAll() }
                     IconButton(title: "Collapse all", systemImage: "rectangle.compress.vertical") { tree.viewer.collapseAll() }
+                case .raw:
+                    IconButton(title: "Expand all", systemImage: "rectangle.expand.vertical") { tree.rawText?.folding?.unfoldAll() }
+                    IconButton(title: "Collapse all", systemImage: "rectangle.compress.vertical") { tree.rawText?.folding?.foldAll() }
                 }
             }
             .controlSize(.small)
@@ -339,7 +343,7 @@ struct JSONDetailView: View {
             case .raw:
                 JSONTextHost(
                     text: tree.pretty, light: AppConfig.store.lightTheme, dark: AppConfig.store.darkTheme,
-                    query: tree.appliedQuery, accent: tree.accent
+                    query: tree.appliedQuery, accent: tree.accent, onTextView: { [tree] in tree.rawText = $0 }
                 ) { rawMatches = $0 }
             }
             JSONFooter(
@@ -375,6 +379,9 @@ final class JSONTreeModel {
     /// The search as last run, a moment after typing stopped.
     private(set) var appliedQuery = ""
     @ObservationIgnored private let source: String
+
+    /// Raw's text view, while Raw shows, for Expand all and Collapse all.
+    @ObservationIgnored weak var rawText: FoldingTextView?
 
     /// The JSON beautified, for Raw; made once, when first shown.
     @ObservationIgnored private(set) lazy var pretty = viewer.root.value.prettyPrinted
@@ -544,8 +551,9 @@ private struct JSONFooter: View {
     }
 }
 
-/// An icon button with a hover fill, for the JSON Viewer's toolbar.
-private struct IconButton: View {
+/// An icon button with a hover fill, for the JSON Viewer's toolbar and the Match
+/// Window's Raw bar.
+struct IconButton: View {
     let title: String
     let systemImage: String
     let action: () -> Void
@@ -659,13 +667,16 @@ private struct JSONTreeHost: NSViewRepresentable {
 /// The beautified JSON, read-only, syntax-colored with the theme for the current
 /// appearance, with line numbers. It's text: URLs and paths are strings like any
 /// other (the tree's rows are where they open). What the search finds is marked in
-/// the Pattern's color, and the first one scrolled to.
+/// the Pattern's color, and the first one scrolled to. Its objects and arrays fold
+/// (`FoldingTextView`); what the search finds is expanded.
 private struct JSONTextHost: NSViewRepresentable {
     let text: String
     let light: Theme
     let dark: Theme
     var query = ""
     var accent: PatternColor = Palette.fallback
+    /// Given the text view once it's made.
+    var onTextView: (FoldingTextView) -> Void = { _ in }
     /// Called with how many times the search is found.
     var onMatches: (Int) -> Void = { _ in }
 
@@ -673,7 +684,7 @@ private struct JSONTextHost: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         // The line numbers keep the text off the edge.
-        let (scrollView, textView) = readOnlyTextView(inset: NSSize(width: 2, height: 8))
+        let (scrollView, textView) = readOnlyTextView(inset: NSSize(width: 2, height: 8), foldsJSON: true)
         textView.isRichText = true
         textView.delegate = context.coordinator
         let ruler = LineNumberRuler(textView: textView)
@@ -684,6 +695,7 @@ private struct JSONTextHost: NSViewRepresentable {
         context.coordinator.textView = textView
         context.coordinator.show(text, light: light, dark: dark)
         context.coordinator.mark(query, in: accent, onMatches: onMatches)
+        onTextView(textView)
         return scrollView
     }
 
@@ -701,8 +713,11 @@ private final class JSONTextCoordinator: NSObject, NSTextViewDelegate {
 
     func show(_ text: String, light: Theme, dark: Theme) {
         if let shown, shown.text == text, shown.light == light, shown.dark == dark { return }
+        // The same text in other colors keeps its folds.
+        let kept = shown?.text == text ? folding?.folded ?? [] : []
         shown = (text, light, dark)
         textView?.textStorage?.setAttributedString(JSONColoring.attributedString(text, light: light, dark: dark))
+        folding?.refold(kept)
         textView?.drawsBackground = false
         textView?.selectedTextAttributes = [.backgroundColor: NSColor.themeSelection(light: light, dark: dark)]
     }
@@ -732,6 +747,7 @@ private final class JSONTextCoordinator: NSObject, NSTextViewDelegate {
             }
             let color = NSColor.pattern(accent, \.strongTint)
             for range in found {
+                folding?.unfold(revealing: range)
                 layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: range)
             }
             if let first = found.first { textView.scrollRangeToVisible(first) }
@@ -745,14 +761,16 @@ private final class JSONTextCoordinator: NSObject, NSTextViewDelegate {
     }
 
     private var onMatches: (Int) -> Void = { _ in }
+
+    private var folding: FoldingLayoutManager? { textView?.layoutManager as? FoldingLayoutManager }
 }
 
 /// A read-only, selectable text view that wraps at its width, in a scroll view of
-/// its own, both clear on the card. TextKit 1, which the line number ruler and
-/// non-contiguous layout need.
+/// its own, both clear on the card. TextKit 1, which the line number ruler,
+/// non-contiguous layout and folding need; JSON folds with `foldsJSON`.
 @MainActor
-private func readOnlyTextView(inset: NSSize) -> (NSScrollView, NSTextView) {
-    let textView = OwnCopyTextView(usingTextLayoutManager: false)
+private func readOnlyTextView(inset: NSSize, foldsJSON: Bool = false) -> (NSScrollView, FoldingTextView) {
+    let textView = FoldingTextView.make(foldsJSON: foldsJSON)
     textView.isEditable = false
     textView.isSelectable = true
     textView.drawsBackground = false

@@ -6,6 +6,10 @@ public enum ShortcutCommand: String, Sendable, CaseIterable {
     case switchInspectorLayout
     case popOut
     case goToLine
+    /// Folds the block at the cursor in Raw JSON.
+    case fold
+    /// Expands the folded block at the cursor in Raw JSON.
+    case unfold
     case toggleWrapLines
     case settings
     case quit
@@ -17,6 +21,8 @@ public enum ShortcutCommand: String, Sendable, CaseIterable {
         case .switchInspectorLayout: "Switch Inspector Layout"
         case .popOut: "Pop Out"
         case .goToLine: "Go to Line"
+        case .fold: "Fold"
+        case .unfold: "Unfold"
         case .toggleWrapLines: "Toggle Wrap Lines"
         case .settings: "Settings"
         case .quit: "Quit"
@@ -30,6 +36,8 @@ public enum ShortcutCommand: String, Sendable, CaseIterable {
         case .switchInspectorLayout: Shortcut("cmd+l")
         case .popOut: Shortcut("cmd+shift+p")
         case .goToLine: Shortcut("cmd+g")
+        case .fold: Shortcut("option+cmd+[")
+        case .unfold: Shortcut("option+cmd+]")
         case .toggleWrapLines: nil
         case .settings: Shortcut("cmd+,")
         case .quit: Shortcut("cmd+q")

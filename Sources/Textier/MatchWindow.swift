@@ -127,6 +127,9 @@ final class MatchWindowModel {
 
     enum Mode: Hashable { case parsed, raw }
 
+    /// Raw's editor, while Raw shows, for Expand all and Collapse all.
+    @ObservationIgnored weak var rawEditor: FoldingTextView?
+
     /// The Match's text as edited in Raw; parsed again a moment after each edit.
     var rawText: String {
         didSet {
@@ -341,7 +344,9 @@ private struct MatchWindowView: View {
                         entry: model.entry, readsAsUTC: $model.readsAsUTC, accent: model.color,
                         showsJSONModePicker: !model.isJSONPattern
                     )
-                case .raw: RawEditor(text: $model.rawText, colorsJSON: model.isJSONPattern).card()
+                case .raw:
+                    RawEditor(text: $model.rawText, colorsJSON: model.isJSONPattern) { [model] in model.rawEditor = $0 }
+                        .card()
                 }
             }
             .padding(.horizontal, 8)
@@ -383,6 +388,14 @@ private struct RawBar: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 0)
+            if model.mode == .raw, model.isJSONPattern {
+                IconButton(title: "Expand all", systemImage: "rectangle.expand.vertical") {
+                    model.rawEditor?.folding?.unfoldAll()
+                }
+                IconButton(title: "Collapse all", systemImage: "rectangle.compress.vertical") {
+                    model.rawEditor?.folding?.foldAll()
+                }
+            }
             if model.mode == .raw, model.canBeautify {
                 Button("Beautify") { model.beautify() }
                     .controlSize(.small)
@@ -397,17 +410,20 @@ private struct RawBar: View {
 }
 
 /// The Match's text, editable, in a monospaced face; JSON syntax-colored as Text
-/// mode colors it, again after each edit.
+/// mode colors it, again after each edit, and folding (`FoldingTextView`).
 private struct RawEditor: NSViewRepresentable {
     @Binding var text: String
     let colorsJSON: Bool
+    /// Given the text view once it's made.
+    var onTextView: (FoldingTextView) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text, colorsJSON: colorsJSON) }
 
     func makeNSView(context: Context) -> NSScrollView {
         // Set up as `NSTextView.scrollableTextView()` sets one up, but a text view
-        // whose ⌘C is textier's own copy, and TextKit 1, which the line numbers use.
-        let textView = OwnCopyTextView(usingTextLayoutManager: false)
+        // whose ⌘C is textier's own copy, and TextKit 1, which the line numbers and
+        // folding use.
+        let textView = FoldingTextView.make(foldsJSON: colorsJSON)
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
@@ -442,6 +458,7 @@ private struct RawEditor: NSViewRepresentable {
         scrollView.hasVerticalRuler = true
         scrollView.rulersVisible = true
         context.coordinator.recolor(textView)
+        onTextView(textView)
         return scrollView
     }
 

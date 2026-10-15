@@ -71,7 +71,7 @@ The side of the Panel that lists every Match in the Input, nested ones included,
 _Avoid_: Right panel, detail pane, sidebar, match list
 
 **Match Window**:
-An Inspector view of one Match, popped out into a window of its own so it can stay open beside others. Many can be open at once. Its Raw view is an editable scratch copy of the Match's text (JSON beautified at first); View Original puts back the text as it is in the Input.
+An Inspector view of one Match, popped out into a window of its own so it can stay open beside others. Many can be open at once. Its Raw view is an editable scratch copy of the Match's text (JSON beautified at first); View Original puts back the text as it is in the Input. Raw JSON, here and in the Inspector, folds: an object or array over several lines collapses to `{⋯}` from the gutter, and stays folded while the text around it is edited.
 _Avoid_: Detail window, child window, viewer window, pop-out
 
 **Settings**:

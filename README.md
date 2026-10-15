@@ -51,7 +51,7 @@ When was that in local time, and how long ago? What's in that JSON? Can you jump
 
 ### A JSON Viewer that understands JSON
 
-- A **Tree** with expand and collapse, or **Raw**: beautified, syntax-colored, with line numbers.
+- A **Tree** with expand and collapse, or **Raw**: beautified, syntax-colored, with line numbers, its objects and arrays folding from the gutter's chevrons as in a code editor.
 - **Filter** by key or value, or query with **JSONPath**: `$.items[?@.qty > 1].sku`. A mistake points at where the query went wrong.
 - Copy Results, Copy Beautified, and a path bar for the selected node.
 - JSON escaped inside a JSON string is detected too, and opens as JSON.
@@ -125,6 +125,7 @@ To copy your selection, textier sends ⌘C to the app in front, which macOS allo
 | **Esc** | Close the popover or hide the Panel |
 | **⌘-click** a Match | Inspect it (a plain click just places the cursor) |
 | **⌘G** | Go to a line, or `line:column`, in the Panel or a Match Window's Raw editor |
+| **⌥⌘[** / **⌥⌘]** | Raw JSON: fold the block at the cursor / expand it |
 | **⌘L** / **⌘E** / **⌘1–9** / **⌘⇧P** | Panel: list layout / highlighting / switch tab / Pop Out |
 | **⌘,** / **⌘Q** | Settings / Quit |
 

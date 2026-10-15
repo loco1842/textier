@@ -340,6 +340,8 @@ private final class PanelWindow: NSWindow {
         case .switchInspectorLayout: model.layout = model.layout == .tabs ? .list : .tabs
         case .popOut: model.popOut()
         case .goToLine: model.goToLine()
+        // Raw JSON's text view, wherever it has the keyboard, takes these.
+        case .fold, .unfold: return super.performKeyEquivalent(with: event)
         case .toggleWrapLines: model.wrapsLines.toggle()
         case .settings: SettingsWindowController.show()
         case .quit: NSApp.terminate(nil)

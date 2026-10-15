@@ -1,4 +1,5 @@
 import AppKit
+import TextierCore
 
 /// The Input's line numbers, in a gutter on its left. A line that wraps is
 /// numbered on its first row only. The cursor's line stands out (brighter and
@@ -6,6 +7,10 @@ import AppKit
 /// Input it draws no background or edge, so the Panel's frosted background shows
 /// through; a Raw view's gutter (`showsGutter`) is a faint band with an edge, and
 /// its numbers are brighter, so they stand out on the card in either appearance.
+///
+/// When the text folds (Raw JSON, `FoldingLayoutManager`), a chevron follows the
+/// number of each line a block opens on: while the pointer is over the gutter, and
+/// always on a folded one. A click on it folds or expands the block.
 @MainActor
 final class LineNumberRuler: NSRulerView {
     private weak var textView: NSTextView?
@@ -22,6 +27,18 @@ final class LineNumberRuler: NSRulerView {
     /// A Raw view's gutter: a faint band with an edge, and brighter numbers.
     var showsGutter = false {
         didSet { needsDisplay = true }
+    }
+
+    /// The chevrons' column, after the numbers, when the text folds.
+    static let chevronWidth: CGFloat = 12
+    /// The pointer is over the gutter: every foldable line shows its chevron.
+    private(set) var isHovering = false {
+        didSet { if isHovering != oldValue { needsDisplay = true } }
+    }
+
+    /// The text's folding, when it folds.
+    var folding: FoldingLayoutManager? {
+        (textView?.layoutManager as? FoldingLayoutManager).flatMap { $0.foldsJSON ? $0 : nil }
     }
 
     private static let font = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
@@ -49,6 +66,10 @@ final class LineNumberRuler: NSRulerView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(selectionDidChange), name: NSTextView.didChangeSelectionNotification,
             object: textView
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(foldsDidChange), name: FoldingLayoutManager.foldsDidChange,
+            object: textView.layoutManager
         )
         if let clipView = scrollView?.contentView {
             clipView.postsBoundsChangedNotifications = true
@@ -99,12 +120,53 @@ final class LineNumberRuler: NSRulerView {
         needsDisplay = true
     }
 
+    @objc private func foldsDidChange() {
+        needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovering = true }
+    override func mouseExited(with event: NSEvent) { isHovering = false }
+
+    /// A click on a line a block opens on folds or expands it.
+    override func mouseDown(with event: NSEvent) {
+        guard let folding, let region = region(at: convert(event.locationInWindow, from: nil)) else {
+            return super.mouseDown(with: event)
+        }
+        folding.toggle(region)
+    }
+
+    /// The block that opens on the line at `point`, in the ruler's coordinates.
+    func region(at point: NSPoint) -> FoldRegion? {
+        guard let textView, let folding, let container = textView.textContainer else { return nil }
+        let inText = textView.convert(point, from: self)
+        let origin = textView.textContainerOrigin
+        let glyph = folding.glyphIndex(for: NSPoint(x: 0, y: inText.y - origin.y), in: container)
+        let fragment = folding.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        guard inText.y - origin.y >= fragment.minY, inText.y - origin.y < fragment.maxY else { return nil }
+        return region(onLineOf: folding.characterIndexForGlyph(at: glyph))
+    }
+
+    /// The block that opens on the line `index` is on.
+    private func region(onLineOf index: Int) -> FoldRegion? {
+        let line = lineNumber(at: index)
+        let start = lineStarts[line - 1]
+        let end = line < lineStarts.count ? lineStarts[line] : (textView?.string as NSString?)?.length ?? start
+        return folding?.region(openingIn: NSRange(location: start, length: end - start))
+    }
+
     private func countLines() {
         lineStarts = Self.lineStarts(in: (textView?.string ?? "") as NSString)
         // Room for the widest number, at least two digits.
         let digits = max(2, String(lineStarts.count).count)
         // 8 pt before the number, 6 after, so the text follows close behind.
         let width = ceil(("8" as NSString).size(withAttributes: [.font: Self.font]).width) * CGFloat(digits) + 14
+            + (folding == nil ? 0 : Self.chevronWidth)
         if ruleThickness != width {
             ruleThickness = width
             maskClipView()
@@ -155,13 +217,19 @@ final class LineNumberRuler: NSRulerView {
         let origin = textView.textContainerOrigin
         let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? Self.font)
         let labelHeight = Self.font.ascender - Self.font.descender
-        func label(_ number: Int, atLineTop top: CGFloat) {
+        let folding = self.folding
+        let chevrons = folding == nil ? 0 : Self.chevronWidth
+        func label(_ number: Int, atLineTop top: CGFloat, start: Int) {
             let y = convert(NSPoint(x: 0, y: top + origin.y), from: textView).y + (lineHeight - labelHeight) / 2
+            if let folding, let region = region(onLineOf: start) {
+                let isFolded = folding.isFolded(region)
+                if isFolded || isHovering { drawChevron(folded: isFolded, centerY: y + labelHeight / 2) }
+            }
             let isCurrent = number == currentLine
             let attributes = isCurrent ? current : quiet
             let text = String(number) as NSString
             let width = text.size(withAttributes: attributes).width
-            let x = ruleThickness - width - 6
+            let x = ruleThickness - width - 6 - chevrons
             if isCurrent {
                 // A soft pill behind the cursor's line number.
                 let pill = NSRect(x: x - 4, y: y - 1.5, width: width + 8, height: labelHeight + 3)
@@ -178,13 +246,27 @@ final class LineNumberRuler: NSRulerView {
             let start = layoutManager.characterIndexForGlyph(at: fragmentGlyphs.location)
             // Only a line's first row: the text's start, or right after a line break.
             guard start == 0 || string.isLineBreak(at: start - 1) else { return }
-            label(self.lineNumber(at: start), atLineTop: fragment.minY)
+            label(self.lineNumber(at: start), atLineTop: fragment.minY, start: start)
         }
         // The empty line after a final line break has its own fragment.
         let extra = layoutManager.extraLineFragmentRect
         if !extra.isEmpty, extra.intersects(visible.offsetBy(dx: -origin.x, dy: -origin.y)) {
-            label(lineStarts.count, atLineTop: extra.minY)
+            label(lineStarts.count, atLineTop: extra.minY, start: lineStarts[lineStarts.count - 1])
         }
+    }
+
+    /// A chevron in its column, pointing right on a folded line, down on one to fold.
+    private func drawChevron(folded: Bool, centerY: CGFloat) {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 8, weight: .bold)
+            .applying(.init(paletteColors: [folded ? NSColor.labelColor : NSColor.secondaryLabelColor]))
+        guard let image = NSImage(systemSymbolName: folded ? "chevron.right" : "chevron.down", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) else { return }
+        let size = image.size
+        let rect = NSRect(
+            x: ruleThickness - Self.chevronWidth - 3 + (Self.chevronWidth - size.width) / 2, y: centerY - size.height / 2,
+            width: size.width, height: size.height
+        )
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 }
 
