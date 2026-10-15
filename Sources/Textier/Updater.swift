@@ -30,8 +30,8 @@ final class Updater {
     )
 
     /// Where releases are listed: the latest one, drafts and pre-releases left out.
-    static let latestRelease = URL(string: "https://api.github.com/repos/loco1842/textier/releases/latest")!
-    static let releasesPage = URL(string: "https://github.com/loco1842/textier/releases")!
+    nonisolated static let latestRelease = URL(string: "https://api.github.com/repos/loco1842/textier/releases/latest")!
+    nonisolated static let releasesPage = URL(string: "https://github.com/loco1842/textier/releases")!
 
     private(set) var state = State.idle
     /// The running version; nil outside an app bundle (`swift run`).

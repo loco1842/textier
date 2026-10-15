@@ -67,7 +67,7 @@ struct UpdateView: View {
         case .available(let release):
             available(release)
         case .installing(let release, let step):
-            Text("Updating textier to \(release.version)").font(.headline)
+            Text("Updating textier to \(release.version.description)").font(.headline)
             ProgressView(step).controlSize(.small)
         case .failed(let message, let page):
             Text("Couldn't update textier").font(.headline)
@@ -80,8 +80,8 @@ struct UpdateView: View {
     }
 
     @ViewBuilder private func available(_ release: Release) -> some View {
-        Text("textier \(release.version) is available").font(.headline)
-        Text(updater.current.map { "You have \($0)." } ?? "This is a development build.").foregroundStyle(.secondary)
+        Text("textier \(release.version.description) is available").font(.headline)
+        Text(updater.current.map { "You have \($0.description)." } ?? "This is a development build.").foregroundStyle(.secondary)
         if !release.notes.isEmpty {
             ScrollView {
                 Text(Self.notes(release.notes))
