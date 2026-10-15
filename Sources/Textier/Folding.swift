@@ -56,7 +56,16 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
 
     /// Folds every block but the outermost ones, so the top level shows.
     func foldAll() {
-        setFolded(regions.filter { region in regions.contains { $0.open < region.open && region.close < $0.close } })
+        // Regions come by opening bracket: a region is inside another when one still
+        // open (on the stack) closes after it.
+        var open: [FoldRegion] = []
+        var nested: [FoldRegion] = []
+        for region in regions {
+            while let last = open.last, last.close < region.open { open.removeLast() }
+            if !open.isEmpty { nested.append(region) }
+            open.append(region)
+        }
+        setFolded(nested)
     }
 
     func unfoldAll() {

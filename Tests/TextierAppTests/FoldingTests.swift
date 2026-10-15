@@ -256,7 +256,8 @@ extension AppTests {
                 let end = (editor.string as NSString).length
                 editor.setSelectedRange(NSRange(location: end, length: 0))
                 editor.insertText("\n", replacementRange: NSRange(location: end, length: 0))
-                app.spin(0.1)
+                // After the reparse a moment later, too.
+                app.spin(0.5)
                 #expect(folding.folded == folded)
                 #expect(controller.model.rawText == full + "\n")
 
