@@ -9,8 +9,8 @@ import TextierCore
 /// its numbers are brighter, so they stand out on the card in either appearance.
 ///
 /// When the text folds (Raw JSON, `FoldingLayoutManager`), a chevron follows the
-/// number of each line a block opens on: while the pointer is over the gutter, and
-/// always on a folded one. A click on it folds or expands the block.
+/// number of each line a block opens on, always: › on a folded one, ⌄ on one to
+/// fold. A click on it folds or expands the block.
 @MainActor
 final class LineNumberRuler: NSRulerView {
     private weak var textView: NSTextView?
@@ -31,10 +31,6 @@ final class LineNumberRuler: NSRulerView {
 
     /// The chevrons' column, after the numbers, when the text folds.
     static let chevronWidth: CGFloat = 12
-    /// The pointer is over the gutter: every foldable line shows its chevron.
-    private(set) var isHovering = false {
-        didSet { if isHovering != oldValue { needsDisplay = true } }
-    }
 
     /// The text's folding, when it folds.
     var folding: FoldingLayoutManager? {
@@ -123,19 +119,6 @@ final class LineNumberRuler: NSRulerView {
     @objc private func foldsDidChange() {
         needsDisplay = true
     }
-
-    /// Tells the ruler when the pointer is over it, for `isHovering`.
-    private lazy var hoverArea = NSTrackingArea(
-        rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self
-    )
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if !trackingAreas.contains(hoverArea) { addTrackingArea(hoverArea) }
-    }
-
-    override func mouseEntered(with event: NSEvent) { isHovering = true }
-    override func mouseExited(with event: NSEvent) { isHovering = false }
 
     /// A click on a line blocks open on folds or expands them
     /// (`FoldingLayoutManager.toggle(line:)`).
@@ -234,7 +217,7 @@ final class LineNumberRuler: NSRulerView {
             if let folding, case let blocks = regions(onLineOf: start), !blocks.isEmpty {
                 // Folded when one of the line's blocks is, as a click then opens it.
                 let isFolded = blocks.contains(where: folding.isFolded)
-                if isFolded || isHovering { drawChevron(folded: isFolded, centerY: y + labelHeight / 2) }
+                drawChevron(folded: isFolded, centerY: y + labelHeight / 2)
             }
             let isCurrent = number == currentLine
             let attributes = isCurrent ? current : quiet
