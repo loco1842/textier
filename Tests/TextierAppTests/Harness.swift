@@ -77,6 +77,7 @@ final class AppHarness {
             window.ignoresMouseEvents = true
             window.makeKeyAndOrderFront(nil)
         }
+        Effects.presentInBackground = Effects.present
 
         // NSTextView's tracking loop reads the real pointer, so stand in for it: a
         // press selects from its point to where `drag` says the mouse went up, and a

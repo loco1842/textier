@@ -96,7 +96,7 @@ private struct GeneralSettings: View {
                 Button("Check Now") { Updater.shared.check(userInitiated: true) }
             }
         } footer: {
-            Text("Looks for a newer release on GitHub at launch and once a day; that's all textier sends over the network.")
+            Text("Looks for a newer release on GitHub at launch and once a day. Updates are all textier goes online for.")
                 .foregroundStyle(.secondary)
         }
         Section {

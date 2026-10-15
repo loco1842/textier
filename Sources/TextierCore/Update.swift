@@ -52,21 +52,29 @@ public struct AppVersion: Sendable, Hashable, Comparable, CustomStringConvertibl
 
 /// A textier release on GitHub, as the latest-release API describes it.
 public struct Release: Sendable, Equatable {
+    /// A file attached to a release.
+    public struct Asset: Sendable, Equatable {
+        public var name: String
+        public var url: URL
+
+        public init(name: String, url: URL) {
+            self.name = name
+            self.url = url
+        }
+    }
+
     public var version: AppVersion
-    public var tag: String
     /// The release notes, in Markdown.
     public var notes: String
     /// The release's page.
     public var page: URL
-    /// The app, zipped (`textier-<version>.zip`), and its name; nil when the
-    /// release has none.
-    public var archive: (name: String, url: URL)?
+    /// The app, zipped (`textier-<version>.zip`); nil when the release has none.
+    public var archive: Asset?
     /// `SHA256SUMS.txt`, the archive's checksum among others.
     public var checksums: URL?
 
-    public init(version: AppVersion, tag: String, notes: String, page: URL, archive: (name: String, url: URL)?, checksums: URL?) {
+    public init(version: AppVersion, notes: String, page: URL, archive: Asset?, checksums: URL?) {
         self.version = version
-        self.tag = tag
         self.notes = notes
         self.page = page
         self.archive = archive
@@ -86,7 +94,7 @@ public struct Release: Sendable, Equatable {
         guard let tag = string("tag_name", in: entries), let version = AppVersion(tag),
               let page = string("html_url", in: entries).flatMap(URL.init(string:))
         else { return nil }
-        var archive: (String, URL)?
+        var archive: Asset?
         var checksums: URL?
         if case .array(let assets)? = value("assets", in: entries) {
             for case .object(let asset) in assets {
@@ -95,19 +103,11 @@ public struct Release: Sendable, Equatable {
                 if name == "SHA256SUMS.txt" { checksums = url }
                 // The release's own zip, or any zip of textier's.
                 if name == "textier-\(version).zip" || (archive == nil && name.hasPrefix("textier-") && name.hasSuffix(".zip")) {
-                    archive = (name, url)
+                    archive = Asset(name: name, url: url)
                 }
             }
         }
-        self.init(
-            version: version, tag: tag, notes: string("body", in: entries) ?? "", page: page, archive: archive,
-            checksums: checksums
-        )
-    }
-
-    public static func == (a: Release, b: Release) -> Bool {
-        a.version == b.version && a.tag == b.tag && a.notes == b.notes && a.page == b.page
-            && a.archive?.name == b.archive?.name && a.archive?.url == b.archive?.url && a.checksums == b.checksums
+        self.init(version: version, notes: string("body", in: entries) ?? "", page: page, archive: archive, checksums: checksums)
     }
 }
 
@@ -116,14 +116,14 @@ public enum UpdateCheck: Sendable, Equatable {
     case upToDate
     case available(Release)
     /// Newer, but the user skipped this version: not offered unless asked.
-    case skipped(Release)
+    case skipped
 }
 
 /// What `latest` means for textier at `current`, with `skipped` the version the
 /// user chose to skip.
-public func updateCheck(current: AppVersion, latest: Release, skipped: String?) -> UpdateCheck {
+public func updateCheck(current: AppVersion, latest: Release, skipped: AppVersion?) -> UpdateCheck {
     guard current < latest.version else { return .upToDate }
-    return skipped.flatMap(AppVersion.init) == latest.version ? .skipped(latest) : .available(latest)
+    return skipped == latest.version ? .skipped : .available(latest)
 }
 
 /// The SHA-256 `SHA256SUMS.txt` (`shasum -a 256` output) gives the file `name`,

@@ -157,11 +157,12 @@ final class SettingsModel {
         apply { $0.inspectorLayout = layout }
     }
 
-    /// Seconds after the Selection Popover closes that it clears its text; 0 never.
+    /// Whether textier looks for a newer release at launch and once a day.
     func setCheckForUpdates(_ check: Bool) {
         apply { $0.checkForUpdates = check }
     }
 
+    /// Seconds after the Selection Popover closes that it clears its text; 0 never.
     func setClearSelectionAfter(_ seconds: Int) {
         apply { $0.clearSelectionAfter = max(0, seconds) }
     }

@@ -44,7 +44,6 @@ struct UpdateTests {
     @Test func aGitHubReleaseIsRead() throws {
         let release = try #require(Release(gitHubJSON: Self.release))
         #expect(release.version == version("0.3.0"))
-        #expect(release.tag == "v0.3.0")
         #expect(release.notes == "## What's new\n- Folding")
         #expect(release.page.absoluteString == "https://github.com/loco1842/textier/releases/tag/v0.3.0")
         #expect(release.archive?.name == "textier-0.3.0.zip")
@@ -65,8 +64,8 @@ struct UpdateTests {
         #expect(updateCheck(current: version("0.2.0"), latest: release, skipped: nil) == .available(release))
         #expect(updateCheck(current: version("0.3.0"), latest: release, skipped: nil) == .upToDate)
         #expect(updateCheck(current: version("0.4.0-dev.1"), latest: release, skipped: nil) == .upToDate)
-        #expect(updateCheck(current: version("0.2.0"), latest: release, skipped: "0.3.0") == .skipped(release))
-        #expect(updateCheck(current: version("0.2.0"), latest: release, skipped: "0.2.5") == .available(release))
+        #expect(updateCheck(current: version("0.2.0"), latest: release, skipped: version("0.3.0")) == .skipped)
+        #expect(updateCheck(current: version("0.2.0"), latest: release, skipped: version("0.2.5")) == .available(release))
     }
 
     @Test func checksumsAreReadFromShasumsOutput() {

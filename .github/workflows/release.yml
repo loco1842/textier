@@ -75,7 +75,7 @@ jobs:
           xattr -d com.apple.quarantine /Applications/Textier.app
           ```
 
-          Already have textier 0.3 or later? It updates itself: **Check for Updates…** in the menu bar icon's menu, or wait for its daily check.
+          Already have textier 0.2 or later? It updates itself: **Check for Updates…** in the menu bar icon's menu, or wait for its daily check.
 
           textier needs **Accessibility** (System Settings → Privacy & Security → Accessibility) to copy your selection. Grant it again after each update.
           NOTES

@@ -61,7 +61,8 @@ extension AppTests {
                 guard let data = answers[url] else { throw UpdateError.network("no answer for \(url)") }
                 return data
             }
-            updater.show = {}
+            updater.show = { _ in }
+            updater.isWritable = { _ in true }
             let defaults = UserDefaults(suiteName: "textier.tests.\(UUID().uuidString)")!
             updater.defaults = defaults
             return (updater, installed)
@@ -69,6 +70,10 @@ extension AppTests {
 
         func wait(_ app: AppHarness, until done: () -> Bool) {
             for _ in 0..<100 where !done() { app.spin(0.05) }
+        }
+
+        func waitUntilFailed(_ app: AppHarness, _ updater: Updater) {
+            wait(app) { if case .failed = updater.state { true } else { false } }
         }
 
         func sums(for zip: Data) -> Data {
@@ -85,7 +90,7 @@ extension AppTests {
                     Updater.latestRelease: Data(Self.releaseJSON.utf8), Self.zipURL: zip, Self.sumsURL: sums(for: zip),
                 ])
                 var shown = 0
-                updater.show = { shown += 1 }
+                updater.show = { _ in shown += 1 }
                 var relaunched: [URL] = []
                 updater.relaunch = { relaunched.append($0) }
 
@@ -121,7 +126,7 @@ extension AppTests {
                 updater.relaunch = { _ in relaunched = true }
                 let release = try #require(Release(gitHubJSON: Self.releaseJSON))
                 updater.install(release)
-                wait(app) { if case .failed = updater.state { true } else { false } }
+                waitUntilFailed(app, updater)
                 #expect(updater.state == .failed(UpdateError.checksumMismatch.description, page: release.page))
                 #expect(build(of: installed) == "old")
                 #expect(!relaunched)
@@ -137,7 +142,7 @@ extension AppTests {
                 updater.relaunch = { _ in Issue.record("relaunched") }
                 let release = try #require(Release(gitHubJSON: Self.releaseJSON))
                 updater.install(release)
-                wait(app) { if case .failed = updater.state { true } else { false } }
+                waitUntilFailed(app, updater)
                 #expect(updater.state == .failed(UpdateError.notTextier(release.version).description, page: release.page))
                 #expect(build(of: installed) == "old")
             }
@@ -150,7 +155,7 @@ extension AppTests {
                 let current = Self.releaseJSON.replacingOccurrences(of: "v0.3.0\"", with: "v0.2.0\"")
                 let (updater, _) = try updater(in: app.folder, answers: [Updater.latestRelease: Data(current.utf8)])
                 var shown = 0
-                updater.show = { shown += 1 }
+                updater.show = { _ in shown += 1 }
 
                 updater.check(userInitiated: true)
                 wait(app) { updater.state != .checking }
@@ -159,6 +164,13 @@ extension AppTests {
 
                 // Automatic: due only a day after the last check, and only while on.
                 updater.checkIfDue(enabled: true)
+                #expect(updater.state == .idle)
+                // At launch, whenever it's on, however recent the last.
+                updater.checkAutomatically(enabled: false)
+                #expect(updater.state == .idle)
+                updater.checkAutomatically(enabled: true)
+                #expect(updater.state == .checking)
+                wait(app) { updater.state != .checking }
                 #expect(updater.state == .idle)
                 updater.now = { Date().addingTimeInterval(90_000) }
                 updater.checkIfDue(enabled: false)
@@ -179,7 +191,7 @@ extension AppTests {
                 defer { app.tearDown() }
                 let (updater, _) = try updater(in: app.folder, answers: [Updater.latestRelease: Data(Self.releaseJSON.utf8)])
                 updater.skip(try #require(Release(gitHubJSON: Self.releaseJSON)))
-                #expect(updater.skippedVersion == "0.3.0")
+                #expect(updater.skippedVersion == AppVersion("0.3.0"))
 
                 updater.checkIfDue(enabled: true)
                 wait(app) { updater.state != .checking }
@@ -187,6 +199,59 @@ extension AppTests {
                 updater.check(userInitiated: true)
                 wait(app) { updater.state != .checking }
                 if case .available = updater.state {} else { Issue.record("not offered when asked: \(updater.state)") }
+            }
+        }
+
+        @Test func anOfferFoundByItselfDoesntTakeTheKeyboard() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let (updater, _) = try updater(in: app.folder, answers: [Updater.latestRelease: Data(Self.releaseJSON.utf8)])
+                var shows: [Bool] = []
+                updater.show = { shows.append($0) }
+                updater.checkIfDue(enabled: true)
+                wait(app) { updater.state != .checking }
+                updater.dismiss()
+                updater.check(userInitiated: true)
+                wait(app) { updater.state != .checking }
+                // Automatic: in the background; asked for: in front, as it starts and as it finds.
+                #expect(shows == [false, true, true])
+            }
+        }
+
+        @Test func whereItCantReplaceItselfItSaysWhyAndOffersTheReleasePage() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let (updater, installed) = try updater(in: app.folder, answers: [:])
+                #expect(updater.canInstall)
+                updater.isWritable = { _ in false }
+                #expect(updater.installProblem == "textier can't write to \(installed.deletingLastPathComponent().path), so it can't replace itself there.")
+                let release = try #require(Release(gitHubJSON: Self.releaseJSON))
+                updater.install(release)
+                #expect(updater.state == .failed(updater.installProblem!, page: release.page))
+
+                let translocated = Updater(
+                    current: AppVersion("0.2.0"),
+                    appURL: URL(fileURLWithPath: "/private/var/folders/x/AppTranslocation/ABC/d/Textier.app"),
+                    bundleIdentifier: Self.identifier
+                )
+                #expect(translocated.installProblem?.hasPrefix("macOS is running textier from a temporary copy") == true)
+                #expect(Updater(current: nil, appURL: nil, bundleIdentifier: nil).installProblem != nil)
+            }
+        }
+
+        @Test func settingsTurnsTheDailyCheckOffAndOn() async throws {
+            try await runInApp {
+                let app = try AppHarness()
+                defer { app.tearDown() }
+                let settings = try app.openSettings()
+                #expect(settings.config.checkForUpdates)
+                settings.setCheckForUpdates(false)
+                #expect(app.configText.contains(#""checkForUpdates": false"#))
+                #expect(!app.store.config.checkForUpdates)
+                settings.setCheckForUpdates(true)
+                #expect(app.store.config.checkForUpdates)
             }
         }
 

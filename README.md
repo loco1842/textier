@@ -76,7 +76,7 @@ When was that in local time, and how long ago? What's in that JSON? Can you jump
 
 ### Fast, local, private
 
-- 100% native Swift and AppKit/SwiftUI, with no web views. The one network call is the update check (below), which you can turn off.
+- 100% native Swift and AppKit/SwiftUI, with no web views. textier goes online only for updates (below): the daily check, which you can turn off, and the download when you install one.
 - Each Pattern gets a time limit, so a runaway regex can't hang the app.
 - Large inputs (200k+ characters) are inspected in the background.
 

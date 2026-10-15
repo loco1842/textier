@@ -180,11 +180,13 @@ final class FoldingLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
         relayout(NSIntersectionRange(NSRange(location: first, length: last - first + 1), NSRange(location: 0, length: length)))
     }
 
-    /// Lays `characters` out again, hiding or showing what's folded now, and says so.
+    /// Says the folds changed, then lays `characters` out again, hiding or showing
+    /// what's folded now. Said first: laying out resizes the text view at once, and
+    /// the card's scroll view must know it's a fold that resized it.
     private func relayout(_ characters: NSRange) {
+        notify()
         invalidateGlyphs(forCharacterRange: characters, changeInLength: 0, actualCharacterRange: nil)
         invalidateLayout(forCharacterRange: characters, actualCharacterRange: nil)
-        notify()
     }
 
     private func notify() {

@@ -150,6 +150,12 @@ enum Effects {
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
+    /// Shows `window` in front without bringing textier forward, so it doesn't take
+    /// the keyboard from what the person is typing in: for a window textier opens
+    /// by itself, such as an update found by the daily check.
+    static var presentInBackground: (NSWindow) -> Void = { window in
+        window.orderFrontRegardless()
+    }
     /// Where the "Copied" label goes: by the mouse pointer. The app tests put it off
     /// screen, so a run doesn't flash it by the pointer of whoever is working.
     static var copiedLabelOrigin: () -> NSPoint = {

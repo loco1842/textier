@@ -58,7 +58,7 @@ git tag v0.2.0 && git push origin v0.2.0
 - **Read [`CONTEXT.md`](CONTEXT.md) first.** It's the glossary: what a *Pattern*, *Match*, *Field*, *Preset*, *Panel* and *Selection Popover* are, and the words to avoid for each. Code, comments, UI text and docs all use these words.
 - Architecture decisions live in [`docs/adr/`](docs/adr/): why a native Swift app, why a hand-written JSON parser, why native syntax coloring, why ICU regex, why an updater of our own. Please open an issue before going against one.
 - Match the surrounding code: Swift 6 strict concurrency, AppKit where SwiftUI falls short, and comments that say *why*.
-- textier's only network calls are the update check and download (GitHub Releases, ADR-0005), and it never reads the clipboard on its own. Changes need to keep it that way.
+- textier's only network calls are the update check (whose daily run the user can turn off) and download, from GitHub Releases (ADR-0005), and it never reads the clipboard on its own. Changes need to keep it that way.
 
 ## Pull requests
 

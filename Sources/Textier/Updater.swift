@@ -1,12 +1,11 @@
 import AppKit
 import CryptoKit
 import Synchronization
-import SwiftUI
 import TextierCore
 
 /// Finds a newer textier release on GitHub and installs it (ADR-0005): at launch
 /// and once a day while the Config's `checkForUpdates` is on, and whenever asked.
-/// A release found is offered in a window (`UpdateWindowController`); installing
+/// A release found is offered in a window (`UpdateWindow`); installing
 /// downloads its zip, checks it against the release's `SHA256SUMS.txt`, puts it in
 /// place of the running app and relaunches. Anything wrong leaves the app as it was.
 @MainActor @Observable
@@ -25,7 +24,7 @@ final class Updater {
 
     /// The running app's.
     static let shared = Updater(
-        current: (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String).flatMap(AppVersion.init),
+        current: version(in: Bundle.main.infoDictionary),
         appURL: Bundle.main.bundleURL.pathExtension == "app" ? Bundle.main.bundleURL : nil,
         bundleIdentifier: Bundle.main.bundleIdentifier
     )
@@ -41,23 +40,48 @@ final class Updater {
     let appURL: URL?
     let bundleIdentifier: String?
     /// Whether an update can be installed here, not only downloaded by hand.
-    var canInstall: Bool { appURL != nil && current != nil }
+    var canInstall: Bool { installProblem == nil }
+
+    /// Why an update can't be installed here, when it can't: textier must run
+    /// from its app, in a folder it can write to.
+    var installProblem: String? {
+        guard let appURL, current != nil else {
+            return "textier isn't running from its app here, so it can't replace itself."
+        }
+        // Opened without clearing the quarantine flag, macOS runs a read-only copy.
+        if appURL.path.contains("/AppTranslocation/") {
+            return "macOS is running textier from a temporary copy, as its quarantine flag wasn't cleared. Download it from the release page, and clear the flag as the README says."
+        }
+        let folder = appURL.deletingLastPathComponent()
+        if !isWritable(folder) { return "textier can't write to \(folder.path), so it can't replace itself there." }
+        return nil
+    }
+
+    /// Whether files can be put in `folder`; the app tests answer for a folder of theirs.
+    @ObservationIgnored var isWritable: (URL) -> Bool = { FileManager.default.isWritableFile(atPath: $0.path) }
 
     /// Fetches a URL's contents; the app tests answer instead of GitHub.
     @ObservationIgnored var fetch: @Sendable (URL) throws -> Data = Updater.download
     /// Quits and opens the app at the URL once quit; the app tests record it.
     @ObservationIgnored var relaunch: @MainActor (URL) -> Void = { Updater.relaunchApp($0) }
-    /// Shows the update window.
-    @ObservationIgnored var show: @MainActor () -> Void = { UpdateWindowController.show() }
+    /// Shows the update window: in front and key when asked for, or without
+    /// taking the keyboard when a check found a release by itself.
+    @ObservationIgnored var show: @MainActor (_ asked: Bool) -> Void = { UpdateWindow.show(activating: $0) }
     @ObservationIgnored var defaults = UserDefaults.standard
     @ObservationIgnored var now: () -> Date = Date.init
 
+    /// Where the user defaults keep the last check and the version skipped.
+    private enum Key {
+        static let lastCheck = "lastUpdateCheck"
+        static let skippedVersion = "skippedUpdateVersion"
+    }
+
     /// The last check that reached GitHub, and the version the user skipped.
-    var lastCheck: Date? { defaults.object(forKey: "lastUpdateCheck") as? Date }
-    var skippedVersion: String? { defaults.string(forKey: "skippedUpdateVersion") }
+    var lastCheck: Date? { defaults.object(forKey: Key.lastCheck) as? Date }
+    var skippedVersion: AppVersion? { defaults.string(forKey: Key.skippedVersion).flatMap(AppVersion.init) }
 
     /// Whether the check running was asked for, so its result shows whatever it is.
-    private var isAskedFor = false
+    private var isUserInitiated = false
     @ObservationIgnored private var timers: [Timer] = []
     private static let work = DispatchQueue(label: "textier.updates", qos: .utility)
 
@@ -69,21 +93,30 @@ final class Updater {
 
     // MARK: Checking
 
-    /// Starts the automatic checks: one a few seconds after launch, then each hour,
-    /// each going ahead only when a day has passed since the last that worked.
+    /// Starts the automatic checks: one a few seconds after launch, then each hour
+    /// one that goes ahead when a day has passed since the last that worked.
     func start() {
-        for (interval, repeats) in [(5.0, false), (3600.0, true)] {
-            let timer = Timer(timeInterval: interval, repeats: repeats) { [weak self] _ in
-                MainActor.assumeIsolated { self?.checkIfDue() }
-            }
+        let launch = Timer(timeInterval: 5, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkAutomatically() }
+        }
+        let hourly = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkIfDue() }
+        }
+        for timer in [launch, hourly] {
             RunLoop.main.add(timer, forMode: .common)
             timers.append(timer)
         }
     }
 
-    /// An automatic check, when it's on and due; only an app bundle checks by itself.
+    /// The daily check, when a day has passed since the last.
     func checkIfDue(enabled: Bool = AppConfig.current.checkForUpdates) {
-        guard enabled, current != nil, state == .idle, isUpdateCheckDue(lastCheck: lastCheck, now: now()) else { return }
+        guard isUpdateCheckDue(lastCheck: lastCheck, now: now()) else { return }
+        checkAutomatically(enabled: enabled)
+    }
+
+    /// A check textier makes by itself, while they're on; only an app bundle makes them.
+    func checkAutomatically(enabled: Bool = AppConfig.current.checkForUpdates) {
+        guard enabled, current != nil, state == .idle else { return }
         check(userInitiated: false)
     }
 
@@ -93,16 +126,16 @@ final class Updater {
         switch state {
         case .checking, .installing:
             if userInitiated {
-                isAskedFor = true
-                show()
+                isUserInitiated = true
+                show(true)
             }
             return
         default:
             break
         }
-        isAskedFor = userInitiated
+        isUserInitiated = userInitiated
         state = .checking
-        if userInitiated { show() }
+        if userInitiated { show(true) }
         let fetch = fetch
         Self.work.async { [weak self] in
             let result = Result { () throws -> Release in
@@ -112,9 +145,7 @@ final class Updater {
                 }
                 return release
             }
-            RunLoop.main.perform(inModes: [.common]) {
-                MainActor.assumeIsolated { self?.finishCheck(result) }
-            }
+            onMain { self?.finishCheck(result) }
         }
     }
 
@@ -122,28 +153,28 @@ final class Updater {
         guard state == .checking else { return }
         switch result {
         case .success(let release):
-            defaults.set(now(), forKey: "lastUpdateCheck")
+            defaults.set(now(), forKey: Key.lastCheck)
             // A development build (no version) is older than any release.
             let current = current ?? AppVersion("0.0.0-dev")!
-            switch updateCheck(current: current, latest: release, skipped: isAskedFor ? nil : skippedVersion) {
+            switch updateCheck(current: current, latest: release, skipped: isUserInitiated ? nil : skippedVersion) {
             case .available(let release):
                 state = .available(release)
-                show()
+                show(isUserInitiated)
             case .upToDate:
-                state = isAskedFor ? .upToDate : .idle
+                state = isUserInitiated ? .upToDate : .idle
             case .skipped:
                 state = .idle
             }
         case .failure(let error):
             // An automatic check tries again in an hour, quietly.
-            state = isAskedFor ? .failed(Self.describe(error), page: Self.releasesPage) : .idle
+            state = isUserInitiated ? .failed(Self.describe(error), page: Self.releasesPage) : .idle
         }
     }
 
     // MARK: Answering an offer
 
     func skip(_ release: Release) {
-        defaults.set(release.version.description, forKey: "skippedUpdateVersion")
+        defaults.set(release.version.description, forKey: Key.skippedVersion)
         state = .idle
     }
 
@@ -155,8 +186,8 @@ final class Updater {
 
     /// Downloads `release`, checks it, puts it in place of the app and relaunches.
     func install(_ release: Release) {
-        guard let appURL, let identifier = bundleIdentifier else {
-            state = .failed("textier isn't running from its app here, so it can't replace itself.", page: release.page)
+        guard installProblem == nil, let appURL, let identifier = bundleIdentifier else {
+            state = .failed(installProblem ?? "textier can't replace itself here.", page: release.page)
             return
         }
         state = .installing(release, step: "Downloading textier \(release.version)…")
@@ -164,27 +195,28 @@ final class Updater {
         Self.work.async { [weak self] in
             let result = Result {
                 try Self.replace(appURL, with: release, identifier: identifier, fetch: fetch) { step in
-                    RunLoop.main.perform(inModes: [.common]) {
-                        MainActor.assumeIsolated {
-                            guard let self, case .installing(let installing, _) = self.state, installing == release else { return }
-                            self.state = .installing(release, step: step)
-                        }
+                    onMain {
+                        guard let self, case .installing(let installing, _) = self.state, installing == release else { return }
+                        self.state = .installing(release, step: step)
                     }
                 }
             }
-            RunLoop.main.perform(inModes: [.common]) {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    switch result {
-                    case .success:
-                        self.state = .installing(release, step: "Relaunching…")
-                        self.relaunch(appURL)
-                    case .failure(let error):
-                        self.state = .failed(Self.describe(error), page: release.page)
-                    }
+            onMain {
+                guard let self else { return }
+                switch result {
+                case .success:
+                    self.state = .installing(release, step: "Relaunching…")
+                    self.relaunch(appURL)
+                case .failure(let error):
+                    self.state = .failed(Self.describe(error), page: release.page)
                 }
             }
         }
+    }
+
+    /// A version string from an app's Info.plist.
+    nonisolated static func version(in info: [String: Any]?) -> AppVersion? {
+        (info?["CFBundleShortVersionString"] as? String).flatMap(AppVersion.init)
     }
 
     // MARK: Installing, off the main thread
@@ -216,16 +248,15 @@ final class Updater {
               let newApp = try files.contentsOfDirectory(at: unzipped, includingPropertiesForKeys: nil)
                 .first(where: { $0.pathExtension == "app" })
         else { throw UpdateError.unzip }
-        let info = NSDictionary(contentsOf: newApp.appendingPathComponent("Contents/Info.plist"))
-        guard info?["CFBundleIdentifier"] as? String == identifier,
-              (info?["CFBundleShortVersionString"] as? String).flatMap(AppVersion.init) == release.version
+        let info = NSDictionary(contentsOf: newApp.appendingPathComponent("Contents/Info.plist")) as? [String: Any]
+        guard info?["CFBundleIdentifier"] as? String == identifier, version(in: info) == release.version
         else { throw UpdateError.notTextier(release.version) }
         // Downloaded by textier, not a browser, it shouldn't be quarantined; made sure.
         _ = try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", newApp.path])
         do {
             _ = try files.replaceItemAt(appURL, withItemAt: newApp)
         } catch {
-            throw UpdateError.replace(appURL.path, error.localizedDescription)
+            throw UpdateError.replace(path: appURL.path, reason: error.localizedDescription)
         }
     }
 
@@ -290,7 +321,7 @@ enum UpdateError: Error, CustomStringConvertible {
     case checksumMismatch
     case unzip
     case notTextier(AppVersion)
-    case replace(String, String)
+    case replace(path: String, reason: String)
 
     var description: String {
         switch self {
@@ -306,135 +337,7 @@ enum UpdateError: Error, CustomStringConvertible {
     }
 }
 
-// MARK: The window
-
-/// The update window: what a check found, and the offer to install it.
-@MainActor
-enum UpdateWindowController {
-    private static var window: NSWindow?
-
-    static func show() {
-        if let window {
-            Effects.present(window)
-            return
-        }
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 200), styleMask: [.titled, .closable],
-            backing: .buffered, defer: false
-        )
-        window.title = "Software Update"
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: UpdateView(updater: .shared) { close() })
-        window.center()
-        Self.window = window
-        closing = NotificationObservation(NSWindow.willCloseNotification, object: window) {
-            Updater.shared.dismiss()
-            Self.window = nil
-        }
-        Effects.present(window)
-    }
-
-    static func close() {
-        window?.close()
-    }
-
-    private static var closing: NotificationObservation?
-}
-
-struct UpdateView: View {
-    let updater: Updater
-    let close: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 64, height: 64)
-            VStack(alignment: .leading, spacing: 10) {
-                content
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(20)
-        .frame(width: 520)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    @ViewBuilder private var content: some View {
-        switch updater.state {
-        case .idle, .checking:
-            Text("Looking for updates…").font(.headline)
-            ProgressView().controlSize(.small)
-        case .upToDate:
-            Text("textier is up to date").font(.headline)
-            Text("Version \(updater.current?.description ?? "") is the latest.").foregroundStyle(.secondary)
-            buttons { Button("OK", action: close).keyboardShortcut(.defaultAction) }
-        case .available(let release):
-            available(release)
-        case .installing(let release, let step):
-            Text("Updating textier to \(release.version)").font(.headline)
-            ProgressView(step).controlSize(.small)
-        case .failed(let message, let page):
-            Text("Couldn't update textier").font(.headline)
-            Text(message).foregroundStyle(.secondary).textSelection(.enabled)
-            buttons {
-                if let page { Button("Open the Release Page") { Effects.openURL(page); close() } }
-                Button("OK", action: close).keyboardShortcut(.defaultAction)
-            }
-        }
-    }
-
-    @ViewBuilder private func available(_ release: Release) -> some View {
-        Text("textier \(release.version) is available").font(.headline)
-        Text(updater.current.map { "You have \($0)." } ?? "This is a development build.").foregroundStyle(.secondary)
-        if !release.notes.isEmpty {
-            ScrollView {
-                Text(Self.notes(release.notes))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(10)
-            }
-            .frame(height: 180)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
-        }
-        Text("After it relaunches, macOS asks for Accessibility again: textier isn't signed with a Developer ID.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        HStack {
-            Button("Skip This Version") { updater.skip(release); close() }
-            Spacer()
-            Button("Later") { close() }
-            if updater.canInstall {
-                Button("Install and Relaunch") { updater.install(release) }
-                    .keyboardShortcut(.defaultAction)
-            } else {
-                Button("Open the Release Page") { Effects.openURL(release.page); close() }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(.top, 4)
-    }
-
-    private func buttons(@ViewBuilder _ content: () -> some View) -> some View {
-        HStack {
-            Spacer()
-            content()
-        }
-        .padding(.top, 4)
-    }
-
-    /// Release notes in Markdown, inline styles kept, headings in bold and list
-    /// items as bullets.
-    static func notes(_ markdown: String) -> AttributedString {
-        let text = markdown.split(separator: "\n", omittingEmptySubsequences: false).map { line in
-            let heading = line.drop { $0 == "#" }
-            if heading.count < line.count, heading.first == " " { return "**\(heading.dropFirst())**" }
-            let indent = line.prefix { $0 == " " }
-            let item = line.dropFirst(indent.count)
-            if item.hasPrefix("* ") || item.hasPrefix("- ") { return indent + "• " + item.dropFirst(2) }
-            return String(line)
-        }.joined(separator: "\n")
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(markdown)
-    }
+/// Runs `work` on the main thread, from the updates queue.
+private func onMain(_ work: @escaping @Sendable @MainActor () -> Void) {
+    RunLoop.main.perform(inModes: [.common]) { MainActor.assumeIsolated(work) }
 }
