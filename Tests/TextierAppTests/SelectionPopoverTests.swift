@@ -612,5 +612,17 @@ extension AppTests {
             }
         }
 
+        @Test func thePreviewsScrollerIsThinWhateverTheSystemSays() async throws {
+            try await runInApp {
+                let scrollView = PreviewScrollView()
+                // As AppKit sets it with a mouse attached, or "Show scroll bars: Always".
+                scrollView.scrollerStyle = .legacy
+                #expect(scrollView.scrollerStyle == .overlay)
+                #expect(scrollView.horizontalScroller?.scrollerStyle == .overlay)
+                #expect(scrollView.horizontalScroller?.controlSize == .small)
+                #expect(!scrollView.hasVerticalScroller)
+            }
+        }
+
     }
 }

@@ -1019,18 +1019,36 @@ private struct PreviewHost: NSViewRepresentable {
     let view: InputTextView
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        // Three lines and "··· N more lines" say there's more below; long lines
-        // scroll sideways, with a scroller while they do.
-        scrollView.hasVerticalScroller = false
-        scrollView.hasHorizontalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
+        let scrollView = PreviewScrollView()
         scrollView.documentView = view
         return scrollView
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {}
+}
+
+/// The preview's scroll view. Three lines and "··· N more lines" say there's more
+/// below; long lines scroll sideways, with a thin scroller over the text while
+/// they do. It stays thin with a mouse attached or "Show scroll bars: Always" on,
+/// where AppKit would put a full-size bar under the text.
+final class PreviewScrollView: NSScrollView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        hasVerticalScroller = false
+        hasHorizontalScroller = true
+        autohidesScrollers = true
+        drawsBackground = false
+        scrollerStyle = .overlay
+        horizontalScroller?.controlSize = .small
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    /// Always overlay: AppKit sets the system's style when it changes.
+    override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set { super.scrollerStyle = .overlay }
+    }
 }
 
 /// textier's menu bar icon and the Selection Popover under it, which the shortcut
