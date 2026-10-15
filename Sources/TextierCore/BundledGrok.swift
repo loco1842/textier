@@ -5,7 +5,7 @@
 // (https://github.com/logstash-plugins/logstash-patterns-core, commit 74a4098,
 // `patterns/legacy/grok-patterns`, `java` and `httpd`).
 //
-// Apache License 2.0; its NOTICE ships with textier (`NOTICE-logstash-patterns-core.txt`).
+// Apache License 2.0, as textier is; its attribution is in textier's `NOTICE`.
 //
 // Changes from Logstash: `HOST` (not in `legacy`) is `%{HOSTNAME}`, as StreamSets
 // defines it; `COMMONAPACHELOG` takes the body of `HTTPD_COMMONLOG`, which it

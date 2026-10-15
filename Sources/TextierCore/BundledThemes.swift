@@ -4,7 +4,7 @@
 // (`extension/themes/light-default.json` and `dark-default.json`), trimmed to the
 // name, type, editor foreground/background and `tokenColors`.
 //
-// MIT License, Copyright (c) 2020 Primer.
+// MIT License, Copyright (c) 2020 Primer; its notice is in textier's `NOTICE`.
 //
 // They're embedded as source rather than SwiftPM resources because the app bundle
 // is assembled from the bare binary (`scripts/bundle.sh`).

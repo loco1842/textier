@@ -67,4 +67,4 @@ git tag v0.2.0 && git push origin v0.2.0
 3. Make sure `scripts/test.sh` passes.
 4. Describe what changed and how you checked it. For UI changes, add a screenshot.
 
-By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
+By contributing, you agree that your contributions are licensed under the [Apache License 2.0](LICENSE).

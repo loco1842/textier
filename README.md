@@ -173,6 +173,4 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 
 ## License
 
-[MIT](LICENSE) © Loocoo.
-
-textier bundles Grok Definitions from [logstash-patterns-core](https://github.com/logstash-plugins/logstash-patterns-core), licensed under Apache 2.0. See [NOTICE-logstash-patterns-core.txt](NOTICE-logstash-patterns-core.txt).
+[Apache License 2.0](LICENSE) © Loocoo. See [NOTICE](NOTICE).

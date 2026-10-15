@@ -23,9 +23,9 @@ app="build/Textier.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp "$bin_dir/Textier" "$app/Contents/MacOS/Textier"
-# The bundled Grok Definitions come from logstash-patterns-core (Apache-2.0).
+# The license and its notices (the bundled Grok Definitions' attribution among them).
 mkdir -p "$app/Contents/Resources"
-cp NOTICE-logstash-patterns-core.txt "$app/Contents/Resources/"
+cp LICENSE NOTICE "$app/Contents/Resources/"
 # The app icon, drawn by scripts/make-app-icon.sh.
 cp Resources/AppIcon.icns "$app/Contents/Resources/"
 
